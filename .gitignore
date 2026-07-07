@@ -1,0 +1,13 @@
+build/
+*.exe
+*.dll
+*.o
+*.obj
+*.ppm
+*.log
+BENCHMARKS.md
+
+# Keep copyrighted/large fixtures outside this detached source repo.
+artifacts/
+firmware/
+images/

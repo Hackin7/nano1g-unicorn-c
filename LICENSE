@@ -1,0 +1,8 @@
+SPDX-License-Identifier: GPL-2.0-or-later
+
+This detached emulator is distributed under the GNU General Public License
+version 2.0 or later. The project links against Unicorn Engine, which is
+distributed under GPL-2.0.
+
+This repository does not include Apple firmware, Rockbox builds, disk images,
+or other copyrighted fixture binaries.
