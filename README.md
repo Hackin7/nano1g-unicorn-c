@@ -252,6 +252,13 @@ Implemented foundation:
   `SysInfo` sector through ATA into fast RAM at `0x40018000`, then writes
   `IsyS` and the pointer into `0x4001ff18`. This is a boot-stage capability
   check, not an Apple Language-screen success condition.
+- `smoke_stage0_sysinfo_osos` extends that no-HLE canary into Apple firmware:
+  a native ARM stage0 reads the real FAT `SysInfo` sector, publishes the Nano
+  fast-RAM handoff table, loads the full wrapped Apple `osos` payload from the
+  disk firmware partition through ATA, and branches into `osos`. The smoke
+  verifies the native Apple handoff probe sees `IsyS`, the real SysInfo pointer,
+  and model word `0x02000000`; it still is not a Language-screen success
+  condition.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.
