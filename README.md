@@ -163,6 +163,11 @@ Implemented foundation:
   zero can be remapped to SDRAM, while NOR flash can be exposed at
   `0x20000000`. A native smoke starts with flash at zero, programs MMAP, then
   verifies low SDRAM and the flash alias from guest code.
+- Flash boot can now be combined with `--virtual-memmap`; a native smoke starts
+  at the flash reset vector, copies code into SDRAM, programs PP MMAP, and
+  verifies Unicorn fetches virtual zero from SDRAM while data reads still see
+  modeled NOR flash. This is the mode a real Apple boot ROM path is expected to
+  need.
 - The Unicorn SWI hook logs Apple updater `svc 0x123456` diagnostic text in
   verbose mode without replacing guest exception handling.
 - Apple firmware starts without instruction shims, synthetic sysinfo/model RAM,

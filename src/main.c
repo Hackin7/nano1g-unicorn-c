@@ -130,9 +130,6 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     if (opts.boot_mode == N1G_BOOT_FLASH && opts.map_flash_zero) {
         n1g_die("--map-flash-zero is only meaningful in direct boot mode");
     }
-    if (opts.boot_mode == N1G_BOOT_FLASH && opts.virtual_memmap) {
-        n1g_die("--virtual-memmap is currently only supported in direct boot mode");
-    }
     return opts;
 }
 

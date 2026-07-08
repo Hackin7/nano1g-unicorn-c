@@ -1755,11 +1755,11 @@ void n1g_cpu_raise_irq(n1g_state_t *s, n1g_core_t core) {
 }
 
 void n1g_cpu_flush_tb(n1g_state_t *s) {
-#if defined(UC_CTL_TB_FLUSH)
+#if defined(uc_ctl_flush_tb)
     for (int i = 0; i < N1G_CORE_COUNT; i++) {
         if (s->cpu[i].uc) {
             (void)uc_ctl_flush_tb(s->cpu[i].uc);
-#if defined(UC_CTL_TLB_FLUSH)
+#if defined(uc_ctl_flush_tlb)
             (void)uc_ctl_flush_tlb(s->cpu[i].uc);
 #endif
         }
