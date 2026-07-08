@@ -40,6 +40,8 @@ int main(void) {
     failed |= expect_u32(n1g_mmap_translate_addr(&all_sdram, 0x00000120u),
                          0x10000120u,
                          "all-access low0 to SDRAM translation");
+    failed |= expect_false(n1g_mmap_entry_matches(&all_sdram, 0x40005ff0u, N1G_MMAP_ACCESS_READ_DATA),
+                           "MMAP ignores fast RAM addresses");
 
     n1g_mmap_entry_t data_write_low0 = n1g_mmap_decode(0x00003a00u, 0x00003a88u);
     failed |= expect_true(data_write_low0.enabled, "data-write-only low0 map enabled");
@@ -61,6 +63,12 @@ int main(void) {
                                              &translated),
                           "priority translate matches");
     failed |= expect_u32(translated, 0x20000120u, "first matching mmap entry wins");
+    failed |= expect_false(n1g_mmap_translate(entries,
+                                              2u,
+                                              0x40005ff0u,
+                                              N1G_MMAP_ACCESS_READ_DATA,
+                                              &translated),
+                           "fast RAM is not translated by broad low MMAP entries");
 
     return failed ? 1 : 0;
 }

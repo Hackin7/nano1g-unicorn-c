@@ -1,5 +1,7 @@
 #include "nano1g/memmap.h"
 
+#include "nano1g/map.h"
+
 enum {
     MMAP_MASK_BITS = 0x3fffu,
     MMAP_ADDR_BITS = 0x3fff0000u,
@@ -39,6 +41,9 @@ static bool access_matches(const n1g_mmap_entry_t *entry, n1g_mmap_access_t acce
 bool n1g_mmap_entry_matches(const n1g_mmap_entry_t *entry,
                             uint32_t addr,
                             n1g_mmap_access_t access) {
+    if (addr >= N1G_FASTRAM_BASE) {
+        return false;
+    }
     if (!entry || !entry->enabled || !access_matches(entry, access)) {
         return false;
     }
