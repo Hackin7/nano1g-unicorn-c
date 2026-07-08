@@ -113,12 +113,23 @@ class Fat32:
                     break
         return None
 
+    def read_file(self, wanted):
+        normalized = wanted.strip("/")
+        for path, is_dir, start, size in self.walk_dir(self.root_cluster):
+            if is_dir or path.lower() != normalized.lower():
+                continue
+            data = self.read_chain(start)
+            return data[:size]
+        return None
+
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
     ap.add_argument("--partition", type=int, default=1, help="zero-based MBR partition index")
     ap.add_argument("--offset", type=lambda x: int(x, 0))
+    ap.add_argument("--extract", help="extract a FAT file by path")
+    ap.add_argument("--output", help="output path for --extract")
     ap.add_argument("--list", action="store_true")
     args = ap.parse_args()
 
@@ -150,6 +161,15 @@ def main():
             )
         else:
             print("offset=0x%x path=not-found" % args.offset)
+    if args.extract:
+        data = fat.read_file(args.extract)
+        if data is None:
+            raise SystemExit("file not found: %s" % args.extract)
+        print("extract path=%s size=%d" % (args.extract, len(data)))
+        if args.output:
+            Path(args.output).write_bytes(data)
+        else:
+            print(data.hex())
     if args.list:
         for path, is_dir, start, size in fat.walk_dir(fat.root_cluster):
             kind = "dir" if is_dir else "file"

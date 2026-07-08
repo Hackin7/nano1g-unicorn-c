@@ -111,7 +111,11 @@ Useful audit tools:
   boot/sysinfo marker strings without treating unaligned byte coincidences as
   code evidence.
 - `tools/inspect_fat32.py`: inspect the FAT32 data partition and map absolute
-  disk offsets back to file paths.
+  disk offsets back to file paths. It can also extract files by path with
+  `--extract PATH --output FILE`.
+- `tools/inspect_sysinfo.py`: inspect an extracted `iPod_Control/Device/SysInfo`
+  file and print the `IsyS` tag, declared size, board string, serial string, and
+  native `osos` model word at `+0xe0`.
 - `tools/decrypt_aupd.py`: decrypt the wrapped Apple `aupd` payload using the
   flash security block.
 - `tools/inspect_flash_image.py`: inspect/extract directory entries inside a
@@ -237,6 +241,12 @@ Implemented foundation:
   of the early boot config word. The current blocker is therefore a missing
   native producer for that handoff/sysinfo state, not an unknown Apple OS entry
   address.
+- The `ipodhd-apple-nano-sysinfo-preferences-probe.img` fixture contains a real
+  FAT file at `iPod_Control/Device/SysInfo`. `smoke_disk_sysinfo_contract`
+  extracts it and verifies `tag=IsyS`, declared size `0x184`, board `nano1g`,
+  and model word `0x02000000` at `+0xe0`. This is useful evidence for the data
+  Apple expects, but it is not itself a boot path: current native execution does
+  not yet load that file into RAM or publish `[0x4001ff18]` through guest code.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.

@@ -193,6 +193,12 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_PYTHON=${Python3_EXECUTABLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_osos_handoff_contract.cmake)
+    add_test(NAME smoke_disk_sysinfo_contract
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_disk_sysinfo_contract.cmake)
     add_test(NAME smoke_aupd_batch_audit
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
