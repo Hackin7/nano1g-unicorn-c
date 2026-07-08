@@ -13,7 +13,8 @@
 
 static void usage(void) {
     puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
-    puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--load-addr ADDR] [--entry ADDR]");
+    puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
+    puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--input SCRIPT]");
     puts("       [--trace-pc] [--trace-mmio] [--verbose]");
@@ -51,6 +52,7 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     opts.max_insns = 20000000u;
     opts.slice_insns = 1;
     opts.timer_divider = 20;
+    opts.rtc_usec_per_tick = 1;
     opts.load_addr = N1G_SDRAM_BASE;
     opts.dump_count = 1;
 
@@ -82,6 +84,11 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.timer_divider = n1g_parse_u32(argv[++i], "timer-divider");
             if (opts.timer_divider == 0) {
                 n1g_die("--timer-divider must be nonzero");
+            }
+        } else if (strcmp(a, "--rtc-usec-per-tick") == 0 && i + 1 < argc) {
+            opts.rtc_usec_per_tick = n1g_parse_u32(argv[++i], "rtc-usec-per-tick");
+            if (opts.rtc_usec_per_tick == 0) {
+                n1g_die("--rtc-usec-per-tick must be nonzero");
             }
         } else if (strcmp(a, "--load-addr") == 0 && i + 1 < argc) {
             opts.load_addr = n1g_parse_u32(argv[++i], "load-addr");
@@ -287,8 +294,11 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    n1g_info(&s, "start max_insns=%llu slice_insns=%u timer_divider=%u",
-             (unsigned long long)s.opts.max_insns, s.opts.slice_insns, s.opts.timer_divider);
+    n1g_info(&s, "start max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u",
+             (unsigned long long)s.opts.max_insns,
+             s.opts.slice_insns,
+             s.opts.timer_divider,
+             s.opts.rtc_usec_per_tick);
     uint64_t remaining = s.opts.max_insns;
     while (remaining > 0) {
         uint32_t slice = s.opts.slice_insns;

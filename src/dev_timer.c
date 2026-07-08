@@ -66,7 +66,7 @@ void n1g_dev_timer_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_
 }
 
 void n1g_dev_timer_tick(n1g_state_t *s) {
-    s->timer.usec++;
+    s->timer.usec += s->opts.rtc_usec_per_tick;
     s->timer.cfg_tick_phase = (s->timer.cfg_tick_phase + 1u) % s->opts.timer_divider;
     if (s->timer.cfg_tick_phase != 0u) {
         return;

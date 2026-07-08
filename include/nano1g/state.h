@@ -42,6 +42,7 @@ typedef struct n1g_opts {
     uint64_t max_insns;
     uint32_t slice_insns;
     uint32_t timer_divider;
+    uint32_t rtc_usec_per_tick;
     uint32_t load_addr;
     uint32_t entry;
     uint32_t dump_addr;

@@ -75,6 +75,11 @@ Useful options:
 - `--timer-divider N`: configurable timer ticks per device tick, default `20`.
   Use `1` for Rockbox timing experiments where timer1 should track the
   microsecond timer more closely.
+- `--rtc-usec-per-tick N`: microseconds added to the free-running RTC at
+  `0x60005010` per device tick, default `1`. When running large
+  `--slice-insns` values, set this near the slice size so guest delay loops and
+  bootloader menu timeouts still make progress without returning to
+  `--slice-insns 1`.
 - `--verbose`: enable Apple probe logs and extra tracing hooks. Normal runs keep
   only status lines.
 - `--trace-pc`: log translated basic blocks. This is very slow.
@@ -135,12 +140,23 @@ Implemented foundation:
 - Timer and interrupt-controller reads preserve byte, halfword, and word
   access semantics; a native ARM smoke covers timer expiry, interrupt status,
   timer-value acknowledge, and one-shot disable behavior.
+- The free-running PP502x usec RTC at `0x60005010` has an explicit
+  `--rtc-usec-per-tick` scale so native bootloader delay loops do not become
+  artificially slow when Unicorn runs larger instruction slices. The default is
+  still `1` for compatibility; `smoke_timer_rtc_scale` covers the scaled path.
 - Headless LCD PPM output.
 - Rockbox canary reaches a nonblack framebuffer.
 - Rockbox core reaches the main menu with native firmware execution using the
   GPT-wrapped disk fixture, `--slice-insns 512`, and `--timer-divider 1`.
 - The standalone Rockbox bootloader fixture runs from fast RAM and reaches a
   nonblack framebuffer without synthetic sysinfo handoff state.
+- The local `../artifacts/firmware/bootloader.bin` fixture is useful as a
+  native Rockbox bootloader canary, but it is not an Apple-aware loader. With
+  RTC scaling enabled it times out into its native Rockbox load path and reports
+  `File not found: /.rockbox/rockbox.ipod` on an Apple disk image. The separate
+  `../clicky/resources/ipodloader2/loader.bin` image is Apple-aware, but direct
+  execution of that loader currently faults early on the same missing
+  boot-ROM/sysinfo handoff state (`0x2d2d2d2d`) that blocks direct Apple `osos`.
 - Flash boot mode can load and map an external NOR/boot-ROM image at
   `0x00000000`. The current local fixtures do not include a stock Apple boot
   ROM dump; the Apple updater ZIP and HDD images contain wrapped firmware
@@ -247,7 +263,8 @@ Still expected before real Apple Language-screen parity:
   Apple boot metadata/sysinfo through guest execution;
 - native Apple framebuffer rendering for the Language screen;
 - Apple LCD/DMA path validation against the native Apple framebuffer;
-- exact interrupt/timer semantics under larger `--slice-insns` values;
+- exact interrupt/timer semantics under larger `--slice-insns` values, beyond
+  the currently modeled free-running RTC scale knob;
 - native Apple boot ROM or flash dump. The current local artifact set still
   contains Apple wrapped firmware/disk images, patched experiments, screenshots,
   and analysis files, but no obvious stock boot ROM image; CTest runs
