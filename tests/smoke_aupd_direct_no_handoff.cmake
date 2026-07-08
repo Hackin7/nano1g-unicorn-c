@@ -54,6 +54,16 @@ if(fwup_pos EQUAL -1)
   message(FATAL_ERROR "AUPD direct parser did not see the expected FwUp/flsh record:\n${output}")
 endif()
 
+string(FIND "${output}" "apple low0 write pc=0x10004790" low0_cmd_pc_pos)
+if(low0_cmd_pc_pos EQUAL -1)
+  message(FATAL_ERROR "AUPD direct run did not log the native low-memory flash command write:\n${output}")
+endif()
+
+string(FIND "${output}" "flash_cmd=read-id low0_map=1" low0_read_id_pos)
+if(low0_read_id_pos EQUAL -1)
+  message(FATAL_ERROR "AUPD direct run did not show the read-ID command hitting the low SDRAM alias:\n${output}")
+endif()
+
 string(FIND "${output}" "dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d" handoff_pos)
 if(handoff_pos EQUAL -1)
   message(FATAL_ERROR "AUPD direct run changed or failed to dump the Apple handoff slot:\n${output}")

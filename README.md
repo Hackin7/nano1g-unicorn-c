@@ -176,8 +176,11 @@ Implemented foundation:
 - Running decrypted `aupd` as a direct RAM payload at `0x10000000` reaches its
   relocated `Pyld` / `FwUp` command records natively. `smoke_aupd_direct_no_handoff`
   verifies that this path sees the expected native `FwUp/flsh` record but still
-  leaves the Apple `osos` fast-RAM handoff slot untouched. Combining the same
-  payload with `--map-flash-zero` exposes a real next hardware question: the
+  leaves the Apple `osos` fast-RAM handoff slot untouched. In verbose mode the
+  same smoke now also logs the native AUPD Intel-style read-ID/read-array writes
+  to low memory; with the normal direct low-zero SDRAM alias, those writes hit
+  `low0_map=1` rather than the modeled NOR device. Combining the same payload
+  with `--map-flash-zero` exposes the other side of that hardware question: the
   updater also uses the low ARM SWI vector for diagnostics, while NOR flash
   commands/readback occupy the same address range. With blank modeled flash at
   zero, the first `svc 0x123456` vectors to `0x00000008` and fetches

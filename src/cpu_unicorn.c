@@ -981,6 +981,32 @@ static bool hook_mem_invalid(uc_engine *uc,
     return false;
 }
 
+static const char *flash_command_name(uint32_t value) {
+    switch (value & 0xffu) {
+    case 0x10u:
+        return "program-alt";
+    case 0x20u:
+        return "erase-setup";
+    case 0x40u:
+        return "program";
+    case 0x50u:
+        return "clear-status";
+    case 0x70u:
+        return "read-status";
+    case 0x90u:
+        return "read-id";
+    case 0x98u:
+        return "cfi-query";
+    case 0xd0u:
+        return "erase-confirm";
+    case 0xf0u:
+    case 0xffu:
+        return "read-array";
+    default:
+        return NULL;
+    }
+}
+
 static void hook_mem_write(uc_engine *uc,
                            uc_mem_type type,
                            uint64_t address,
@@ -1008,8 +1034,36 @@ static void hook_mem_write(uc_engine *uc,
     static uint32_t ui_global_logs;
     static uint32_t ui_object_logs;
     static uint32_t ui_stack_logs;
+    static uint32_t low0_logs;
+    static uint32_t low0_cmd_logs;
     uint32_t addr = (uint32_t)address;
     uint32_t val = (uint32_t)value;
+
+    if (addr < N1G_FLASH_SIZE) {
+        const char *cmd = flash_command_name(val);
+        bool should_log = false;
+        if (cmd && low0_cmd_logs < 96u) {
+            low0_cmd_logs++;
+            should_log = true;
+        } else if (low0_logs < 32u) {
+            low0_logs++;
+            should_log = true;
+        }
+        if (should_log) {
+            uint32_t pc = 0;
+            uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+            n1g_log(s,
+                    "apple low0 write pc=0x%08x addr=0x%08x size=%d value=0x%08x flash_cmd=%s low0_map=%d",
+                    pc,
+                    addr,
+                    size,
+                    val,
+                    cmd ? cmd : "-",
+                    (int)s->low0_map);
+        }
+        return;
+    }
+
     high_writes++;
     if (val != 0) {
         high_nonzero_writes++;
@@ -1411,6 +1465,9 @@ bool n1g_cpu_init(n1g_state_t *s) {
              (s->opts.verbose &&
               !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,
                                 0x10700000u, 0x10800000u)) ||
+             (s->opts.verbose &&
+              !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,
+                                N1G_FLASH_BASE, N1G_FLASH_BASE + N1G_FLASH_SIZE - 1u)) ||
              (s->opts.verbose &&
               !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,
                                 0x11fa0000u, 0x12000000u)))) {
