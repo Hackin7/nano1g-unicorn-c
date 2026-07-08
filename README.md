@@ -201,6 +201,12 @@ Implemented foundation:
   handoff slot, handoff tag, sysinfo pointer, and whether that pointer is
   RAM-backed. `smoke_apple_handoff_probe` verifies the current direct `osos`
   path still sees the untouched RAM fill pattern rather than seeded sysinfo.
+- `tools/inspect_osos_handoff.py` checks the native `osos` opcodes that define
+  this contract: Nano selector `0x36` chooses fast-RAM slot `0x4001ff18`, the
+  expected tag is `0x53797349` / `IsyS`, the sysinfo pointer is read from
+  `[handoff+0x4]`, and the first required model word is read from
+  `[sysinfo+0xe0]`. The current blocker is therefore a missing native producer
+  for that handoff/sysinfo state, not an unknown Apple OS entry address.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.
