@@ -10,6 +10,8 @@ HANDOFF_HELPER = 0x1084
 CPU_ID_HELPER = 0x80200
 PP32_HELPER = 0x598
 PP36_HELPER = 0x5B8
+SYSINFO_MODEL_BUCKET = 0xE6C
+SYSINFO_MODEL_TABLE = 0x16C8
 NANO_PP_SELECTOR = 0x36
 IPOD_PP_SELECTOR = 0x32
 CPU_ID_BYTE = 0x55
@@ -101,6 +103,19 @@ def check_contract(data):
     require_word(data, HANDOFF_FUNC + 0x74, 0x40006000, "handoff destination global")
     require_word(data, HANDOFF_FUNC + 0x78, 0x53797349, "handoff IsyS tag literal")
 
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x00, 0xE59FC088, "sysinfo model bucket table literal")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x08, 0xE3A00000, "sysinfo model bucket initial index")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x0C, 0xE79CE100, "sysinfo model bucket table load")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x10, 0xE15E0003, "sysinfo model bucket compare")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x14, 0x82403001, "sysinfo model bucket previous index")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x20, 0xE350000A, "sysinfo model bucket table count")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x58, 0xE3520002, "sysinfo model bucket slot 2 compare")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x5C, 0x05910000, "sysinfo model bucket reads stack word")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x64, 0x00000002, "sysinfo model bucket slot 2 immediate")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x68, 0x01800403, "sysinfo model bucket shifts into bits 8..11")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x90, SYSINFO_MODEL_TABLE, "sysinfo model bucket threshold table")
+    require_word(data, SYSINFO_MODEL_BUCKET + 0x9C, 0x0000F0FF, "sysinfo model bucket slot 2 mask")
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -117,6 +132,7 @@ def main():
     legacy_slot = legacy_base + slot_offset - helper_subtract
     nano_slot = nano_base + slot_offset - helper_subtract
     tag = rd32(osos, HANDOFF_FUNC + 0x78)
+    model_thresholds = [rd32(osos, SYSINFO_MODEL_TABLE + i * 4) for i in range(10)]
 
     print("osos_size=0x%x" % len(osos))
     print("pp_selectors legacy=0x%02x nano=0x%02x" % (IPOD_PP_SELECTOR, NANO_PP_SELECTOR))
@@ -127,6 +143,11 @@ def main():
     print("handoff_tag=0x%08x/IsyS" % tag)
     print("sysinfo_pointer_source=[handoff+0x4]")
     print("sysinfo_model_word=[sysinfo+0xe0]")
+    print("sysinfo_model_bucket_func=0x%04x" % SYSINFO_MODEL_BUCKET)
+    print("sysinfo_model_bucket_table=%s" %
+          ",".join("0x%08x" % value for value in model_thresholds))
+    print("sysinfo_model_bucket_slot=2")
+    print("sysinfo_model_bucket_bits=8..11")
     print("validated_sysinfo_global=0x4000608c")
 
 

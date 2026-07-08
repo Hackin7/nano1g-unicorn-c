@@ -22,6 +22,10 @@ foreach(required
     "handoff_tag=0x53797349/IsyS"
     "sysinfo_pointer_source=[handoff+0x4]"
     "sysinfo_model_word=[sysinfo+0xe0]"
+    "sysinfo_model_bucket_func=0x0e6c"
+    "sysinfo_model_bucket_table=0x00000000,0x00080000,0x00100000,0x00200000,0x00400000,0x00800000,0x01000000,0x02000000,0x04000000,0x08000000"
+    "sysinfo_model_bucket_slot=2"
+    "sysinfo_model_bucket_bits=8..11"
     "validated_sysinfo_global=0x4000608c")
   string(FIND "${output}" "${required}" pos)
   if(pos EQUAL -1)

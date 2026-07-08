@@ -205,8 +205,11 @@ Implemented foundation:
   this contract: Nano selector `0x36` chooses fast-RAM slot `0x4001ff18`, the
   expected tag is `0x53797349` / `IsyS`, the sysinfo pointer is read from
   `[handoff+0x4]`, and the first required model word is read from
-  `[sysinfo+0xe0]`. The current blocker is therefore a missing native producer
-  for that handoff/sysinfo state, not an unknown Apple OS entry address.
+  `[sysinfo+0xe0]`. That word is bucketed by native code at `0x0e6c` using
+  thresholds `0, 0x80000, 0x100000, ... 0x8000000`, then packed into bits 8..11
+  of the early boot config word. The current blocker is therefore a missing
+  native producer for that handoff/sysinfo state, not an unknown Apple OS entry
+  address.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.
