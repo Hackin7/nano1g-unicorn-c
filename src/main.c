@@ -15,7 +15,7 @@ static void usage(void) {
     puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
-    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--input SCRIPT]");
+    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--input SCRIPT]");
     puts("       [--trace-pc] [--trace-mmio] [--verbose]");
 }
 
@@ -104,6 +104,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.firmware_from_disk = true;
         } else if (strcmp(a, "--map-flash-zero") == 0) {
             opts.map_flash_zero = true;
+        } else if (strcmp(a, "--virtual-memmap") == 0) {
+            opts.virtual_memmap = true;
         } else if (strcmp(a, "--input") == 0 && i + 1 < argc) {
             opts.input_script = argv[++i];
         } else if (strcmp(a, "--trace-pc") == 0) {
@@ -127,6 +129,9 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     }
     if (opts.boot_mode == N1G_BOOT_FLASH && opts.map_flash_zero) {
         n1g_die("--map-flash-zero is only meaningful in direct boot mode");
+    }
+    if (opts.boot_mode == N1G_BOOT_FLASH && opts.virtual_memmap) {
+        n1g_die("--virtual-memmap is currently only supported in direct boot mode");
     }
     return opts;
 }

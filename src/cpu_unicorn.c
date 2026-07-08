@@ -46,6 +46,57 @@ static void mmio_write_cb(uc_engine *uc, uint64_t offset, unsigned size, uint64_
     n1g_bus_write_core(ctx->s, ctx->core, (uint32_t)addr, size, (uint32_t)value);
 }
 
+static bool tlb_access_from_type(uc_mem_type type, n1g_mmap_access_t *access, uc_prot *perms) {
+    switch (type) {
+    case UC_MEM_READ:
+        *access = N1G_MMAP_ACCESS_READ_DATA;
+        *perms = UC_PROT_READ;
+        return true;
+    case UC_MEM_WRITE:
+        *access = N1G_MMAP_ACCESS_WRITE_DATA;
+        *perms = UC_PROT_WRITE;
+        return true;
+    case UC_MEM_FETCH:
+        *access = N1G_MMAP_ACCESS_FETCH_CODE;
+        *perms = UC_PROT_EXEC;
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void decode_current_mmaps(n1g_state_t *s, n1g_mmap_entry_t entries[8]) {
+    for (uint32_t i = 0; i < 8u; i++) {
+        uint32_t logical = s->memcon.regs[(0xf000u / 4u) + i * 2u];
+        uint32_t physical = s->memcon.regs[(0xf004u / 4u) + i * 2u];
+        entries[i] = n1g_mmap_decode(logical, physical);
+    }
+}
+
+static bool hook_tlb_fill(uc_engine *uc,
+                          uint64_t vaddr,
+                          uc_mem_type type,
+                          uc_tlb_entry *result,
+                          void *user_data) {
+    (void)uc;
+    n1g_state_t *s = (n1g_state_t *)user_data;
+    n1g_mmap_access_t access;
+    uc_prot perms;
+    uint32_t translated = (uint32_t)vaddr;
+    n1g_mmap_entry_t entries[8];
+
+    if (!s->opts.virtual_memmap || !tlb_access_from_type(type, &access, &perms)) {
+        return false;
+    }
+
+    decode_current_mmaps(s, entries);
+    (void)n1g_mmap_translate(entries, 8u, (uint32_t)vaddr, access, &translated);
+
+    result->paddr = translated;
+    result->perms = perms;
+    return true;
+}
+
 static void hook_block(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
     n1g_state_t *s = (n1g_state_t *)user_data;
     if (s->opts.profile == N1G_PROFILE_APPLE &&
@@ -1481,6 +1532,16 @@ bool n1g_cpu_init(n1g_state_t *s) {
             n1g_log(s, "uc_open failed: %s", uc_strerror(err));
             return false;
         }
+        if (s->opts.virtual_memmap) {
+            err = uc_ctl_tlb_mode(s->cpu[i].uc, UC_TLB_VIRTUAL);
+            if (err != UC_ERR_OK) {
+                n1g_log(s, "uc_ctl_tlb_mode virtual failed: %s", uc_strerror(err));
+                return false;
+            }
+            if (!add_hook_checked(s, s->cpu[i].uc, UC_HOOK_TLB_FILL, (void *)hook_tlb_fill, 1, 0)) {
+                return false;
+            }
+        }
         s->cpu[i].running = true;
         s->cpu[i].halted = false;
         if (s->opts.trace_pc &&
@@ -1490,7 +1551,7 @@ bool n1g_cpu_init(n1g_state_t *s) {
         if (!add_hook_checked(s, s->cpu[i].uc, UC_HOOK_INTR, (void *)hook_intr, 1, 0)) {
             return false;
         }
-        if ((s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero) &&
+        if ((s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero || s->opts.virtual_memmap) &&
             !add_hook_checked(s,
                               s->cpu[i].uc,
                               UC_HOOK_MEM_WRITE,
@@ -1553,7 +1614,7 @@ bool n1g_cpu_map_memory(n1g_state_t *s) {
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram1")) return false;
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + 2u * N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram2")) return false;
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + 3u * N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram3")) return false;
-        if (s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero) {
+        if (s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero || s->opts.virtual_memmap) {
             if (!map_flash_one(s, uc)) return false;
             s->low0_map = N1G_LOW0_FLASH;
         } else if (!map_ram_one(s, uc, 0x00000000u, N1G_SDRAM_SIZE, s->ram.sdram, "low0")) {
@@ -1623,10 +1684,11 @@ bool n1g_cpu_apply_memmap(n1g_state_t *s) {
     bool want_flash_alias = false;
     n1g_mmap_entry_t entries[8];
 
-    for (uint32_t i = 0; i < 8u; i++) {
-        uint32_t logical = s->memcon.regs[(0xf000u / 4u) + i * 2u];
-        uint32_t physical = s->memcon.regs[(0xf004u / 4u) + i * 2u];
-        entries[i] = n1g_mmap_decode(logical, physical);
+    decode_current_mmaps(s, entries);
+
+    if (s->opts.virtual_memmap) {
+        n1g_cpu_flush_tb(s);
+        return true;
     }
 
     uint32_t translated = 0;
@@ -1697,6 +1759,9 @@ void n1g_cpu_flush_tb(n1g_state_t *s) {
     for (int i = 0; i < N1G_CORE_COUNT; i++) {
         if (s->cpu[i].uc) {
             (void)uc_ctl_flush_tb(s->cpu[i].uc);
+#if defined(UC_CTL_TLB_FLUSH)
+            (void)uc_ctl_flush_tlb(s->cpu[i].uc);
+#endif
         }
     }
 #else

@@ -50,6 +50,7 @@ typedef struct n1g_opts {
     bool dump_set;
     bool firmware_from_disk;
     bool map_flash_zero;
+    bool virtual_memmap;
     bool trace_pc;
     bool trace_mmio;
     bool verbose;
