@@ -235,6 +235,36 @@ static uint32_t ram_read32_or_zero(n1g_state_t *s, uint32_t addr) {
     return value;
 }
 
+static void record_apple_lcd_path_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_lcd_path_hits) / sizeof(s->counters.apple_lcd_path_hits[0])) {
+        return;
+    }
+
+    s->counters.apple_lcd_path_hits[slot]++;
+    uc_reg_read(uc, UC_ARM_REG_R0, &s->counters.apple_lcd_path_last[slot][0]);
+    uc_reg_read(uc, UC_ARM_REG_R1, &s->counters.apple_lcd_path_last[slot][1]);
+    uc_reg_read(uc, UC_ARM_REG_R2, &s->counters.apple_lcd_path_last[slot][2]);
+    uc_reg_read(uc, UC_ARM_REG_R3, &s->counters.apple_lcd_path_last[slot][3]);
+    uc_reg_read(uc, UC_ARM_REG_R4, &s->counters.apple_lcd_path_last[slot][4]);
+    uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_lcd_path_last[slot][5]);
+}
+
+static void record_apple_lcd_producer_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_lcd_producer_hits) / sizeof(s->counters.apple_lcd_producer_hits[0])) {
+        return;
+    }
+
+    s->counters.apple_lcd_producer_hits[slot]++;
+    uc_reg_read(uc, UC_ARM_REG_R0, &s->counters.apple_lcd_producer_last[slot][0]);
+    uc_reg_read(uc, UC_ARM_REG_R1, &s->counters.apple_lcd_producer_last[slot][1]);
+    uc_reg_read(uc, UC_ARM_REG_R2, &s->counters.apple_lcd_producer_last[slot][2]);
+    uc_reg_read(uc, UC_ARM_REG_R3, &s->counters.apple_lcd_producer_last[slot][3]);
+    uc_reg_read(uc, UC_ARM_REG_R4, &s->counters.apple_lcd_producer_last[slot][4]);
+    uc_reg_read(uc, UC_ARM_REG_R5, &s->counters.apple_lcd_producer_last[slot][5]);
+    uc_reg_read(uc, UC_ARM_REG_SP, &s->counters.apple_lcd_producer_last[slot][6]);
+    uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_lcd_producer_last[slot][7]);
+}
+
 static void format_guest_bytes(uc_engine *uc, uint32_t addr, char *hex, size_t hex_size, char *ascii, size_t ascii_size) {
     uint8_t bytes[32];
     memset(bytes, 0, sizeof(bytes));
@@ -509,6 +539,80 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
     }
 
     apple_track_progress(s, address);
+
+    switch ((uint32_t)address) {
+    case 0x00053b20u:
+        record_apple_lcd_path_probe(uc, s, 0);
+        break;
+    case 0x00053b28u:
+        record_apple_lcd_path_probe(uc, s, 1);
+        break;
+    case 0x00053b30u:
+        record_apple_lcd_path_probe(uc, s, 2);
+        break;
+    case 0x00053b34u:
+        record_apple_lcd_path_probe(uc, s, 3);
+        break;
+    case 0x00053b38u:
+        record_apple_lcd_path_probe(uc, s, 4);
+        break;
+    case 0x000255a4u:
+        record_apple_lcd_path_probe(uc, s, 5);
+        break;
+    case 0x000255b0u:
+        record_apple_lcd_path_probe(uc, s, 6);
+        break;
+    case 0x000255b4u:
+        record_apple_lcd_path_probe(uc, s, 7);
+        break;
+    case 0x00025274u:
+        record_apple_lcd_path_probe(uc, s, 8);
+        break;
+    case 0x0004b74cu:
+        record_apple_lcd_path_probe(uc, s, 9);
+        break;
+    case 0x00045dfcu:
+        record_apple_lcd_path_probe(uc, s, 10);
+        break;
+    case 0x00045e6cu:
+        record_apple_lcd_path_probe(uc, s, 11);
+        break;
+    case 0x000540a0u:
+        record_apple_lcd_producer_probe(uc, s, 0);
+        break;
+    case 0x00054104u:
+        record_apple_lcd_producer_probe(uc, s, 1);
+        break;
+    case 0x00054108u:
+        record_apple_lcd_producer_probe(uc, s, 2);
+        break;
+    case 0x0005410cu:
+        record_apple_lcd_producer_probe(uc, s, 3);
+        break;
+    case 0x00054194u:
+        record_apple_lcd_producer_probe(uc, s, 4);
+        break;
+    case 0x000541acu:
+        record_apple_lcd_producer_probe(uc, s, 5);
+        break;
+    case 0x000541ccu:
+        record_apple_lcd_producer_probe(uc, s, 6);
+        break;
+    case 0x000541d4u:
+        record_apple_lcd_producer_probe(uc, s, 7);
+        break;
+    case 0x000541dcu:
+        record_apple_lcd_producer_probe(uc, s, 8);
+        break;
+    case 0x00054208u:
+        record_apple_lcd_producer_probe(uc, s, 9);
+        break;
+    case 0x00054210u:
+        record_apple_lcd_producer_probe(uc, s, 10);
+        break;
+    default:
+        break;
+    }
 
     if (address == 0x10001760u || address == 0x10000ee4u ||
         address == 0x10001078u || address == 0x10001afcu) {
@@ -1463,10 +1567,16 @@ static bool add_apple_progress_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00048060u, 0x00048064u) &&
            add_code_hook(s, uc, 0x00048098u, 0x0004809cu) &&
            add_code_hook(s, uc, 0x000480acu, 0x000480b0u) &&
+           add_code_hook(s, uc, 0x00045dfcu, 0x00045e00u) &&
+           add_code_hook(s, uc, 0x00045e6cu, 0x00045e70u) &&
+           add_code_hook(s, uc, 0x0004b74cu, 0x0004b750u) &&
            add_code_hook(s, uc, 0x0004ee20u, 0x0004ee24u) &&
            add_code_hook(s, uc, 0x0004eeb4u, 0x0004eeb8u) &&
-           add_code_hook(s, uc, 0x0005410cu, 0x00054110u) &&
+           add_code_hook(s, uc, 0x000540a0u, 0x00054214u) &&
+           add_code_hook(s, uc, 0x00025274u, 0x00025278u) &&
+           add_code_hook(s, uc, 0x000255a4u, 0x000255b8u) &&
            add_code_hook(s, uc, 0x00053b18u, 0x00053b1cu) &&
+           add_code_hook(s, uc, 0x00053b20u, 0x00053b3cu) &&
            add_code_hook(s, uc, 0x000d0bb4u, 0x000d0bb8u) &&
            add_code_hook(s, uc, 0x000d0c54u, 0x000d0c58u) &&
            add_code_hook(s, uc, 0x0017d260u, 0x0017d264u) &&
@@ -1482,7 +1592,12 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00001388u, 0x000013b8u) &&
            add_code_hook(s, uc, 0x00024d00u, 0x00024effu) &&
            add_code_hook(s, uc, 0x00024c40u, 0x00025030u) &&
+           add_code_hook(s, uc, 0x00025274u, 0x00025278u) &&
+           add_code_hook(s, uc, 0x000255a4u, 0x000255b8u) &&
            add_code_hook(s, uc, 0x00032840u, 0x00032844u) &&
+           add_code_hook(s, uc, 0x00045dfcu, 0x00045e00u) &&
+           add_code_hook(s, uc, 0x00045e6cu, 0x00045e70u) &&
+           add_code_hook(s, uc, 0x0004b74cu, 0x0004b750u) &&
            add_code_hook(s, uc, 0x00048060u, 0x000480b0u) &&
            add_code_hook(s, uc, 0x00048300u, 0x00048400u) &&
            add_code_hook(s, uc, 0x0004ec54u, 0x0004ec58u) &&
@@ -1491,8 +1606,7 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00053b04u, 0x00053b40u) &&
            add_code_hook(s, uc, 0x00053db8u, 0x00053dbcu) &&
            add_code_hook(s, uc, 0x00053f28u, 0x00053f34u) &&
-           add_code_hook(s, uc, 0x000540a0u, 0x000540a4u) &&
-           add_code_hook(s, uc, 0x0005410cu, 0x00054110u) &&
+           add_code_hook(s, uc, 0x000540a0u, 0x00054214u) &&
            add_code_hook(s, uc, 0x00087310u, 0x00087314u) &&
            add_code_hook(s, uc, 0x000a93d8u, 0x000a9400u) &&
            add_code_hook(s, uc, 0x000ad3f8u, 0x000ad430u) &&

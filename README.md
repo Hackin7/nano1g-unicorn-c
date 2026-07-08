@@ -48,6 +48,7 @@ build-mingw/nano1g --profile rockbox \
   --max-insns 10000000000 \
   --slice-insns 512 \
   --timer-divider 1 \
+  --web 8080 \
   --ppm tmp/rockbox-menu.ppm
 
 build-mingw/nano1g --profile apple \
@@ -56,6 +57,10 @@ build-mingw/nano1g --profile apple \
   --max-insns 175000000 \
   --ppm tmp/apple-language.ppm
 ```
+
+Open `http://127.0.0.1:8080/` while the emulator is running. With `--web`
+enabled, the process keeps serving the final LCD frame after execution stops;
+use Ctrl+C to exit, or add `--web-no-hold` for script/test runs.
 
 Useful options:
 
@@ -80,6 +85,9 @@ Useful options:
   `--slice-insns` values, set this near the slice size so guest delay loops and
   bootloader menu timeouts still make progress without returning to
   `--slice-insns 1`.
+- `--ram-fill-zero`: initialize guest RAM with zeroes instead of the default
+  diagnostic `0x2d` pattern. This is only a reset-state experiment knob; it
+  does not seed Apple boot metadata or firmware-owned structures.
 - `--verbose`: enable Apple probe logs and extra tracing hooks. Normal runs keep
   only status lines.
 - `--trace-pc`: log translated basic blocks. This is very slow.
@@ -88,6 +96,10 @@ Useful options:
 - `--entry ADDR`: override initial PC, default follows `--load-addr`.
 - `--input "wheel-down,wait:250,select"`: accepted and logged; device injection
   is a later milestone.
+- `--web PORT`: serve a local browser frontend on `127.0.0.1:PORT`. The page
+  polls native emulator counters and the LCD framebuffer as a BMP image.
+- `--web-no-hold`: when `--web` is enabled, exit immediately after emulation
+  instead of keeping the final frame available in the browser.
 
 Useful audit tools:
 
@@ -149,6 +161,8 @@ Implemented foundation:
   artificially slow when Unicorn runs larger instruction slices. The default is
   still `1` for compatibility; `smoke_timer_rtc_scale` covers the scaled path.
 - Headless LCD PPM output.
+- Local browser frontend via `--web PORT`, backed by the same native LCD
+  framebuffer that PPM output uses.
 - Rockbox canary reaches a nonblack framebuffer.
 - Rockbox core reaches the main menu with native firmware execution using the
   GPT-wrapped disk fixture, `--slice-insns 512`, and `--timer-divider 1`.

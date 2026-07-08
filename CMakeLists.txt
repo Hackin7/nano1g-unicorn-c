@@ -34,7 +34,7 @@ if(NOT UNICORN_INCLUDE_DIR OR NOT UNICORN_LIBRARY)
     "library='${UNICORN_LIBRARY}'.")
 endif()
 
-add_executable(nano1g
+set(NANO1G_SOURCES
   src/main.c
   src/cpu_unicorn.c
   src/bus.c
@@ -60,30 +60,64 @@ add_executable(nano1g
   src/dev_ppcon.c
   src/dev_flash.c
   src/trace.c
+  src/web_frontend.c
 )
+
+add_executable(nano1g ${NANO1G_SOURCES})
+add_executable(nano1g-control ${NANO1G_SOURCES})
+add_executable(nano1g-clicky-ui ${NANO1G_SOURCES})
 
 target_include_directories(nano1g PRIVATE
   include
   "${UNICORN_INCLUDE_DIR}"
 )
+target_include_directories(nano1g-control PRIVATE
+  include
+  "${UNICORN_INCLUDE_DIR}"
+)
+target_include_directories(nano1g-clicky-ui PRIVATE
+  include
+  "${UNICORN_INCLUDE_DIR}"
+)
 target_link_libraries(nano1g PRIVATE "${UNICORN_LIBRARY}")
+target_link_libraries(nano1g-control PRIVATE "${UNICORN_LIBRARY}")
+target_link_libraries(nano1g-clicky-ui PRIVATE "${UNICORN_LIBRARY}")
+if(WIN32)
+  target_link_libraries(nano1g PRIVATE ws2_32)
+  target_link_libraries(nano1g-control PRIVATE ws2_32)
+  target_link_libraries(nano1g-clicky-ui PRIVATE ws2_32)
+endif()
 
 if(WIN32 AND EXISTS "${_NANO1G_LOCAL_UNICORN}/lib/unicorn.dll")
   add_custom_command(TARGET nano1g POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${_NANO1G_LOCAL_UNICORN}/lib/unicorn.dll"
       "$<TARGET_FILE_DIR:nano1g>/unicorn.dll")
+  add_custom_command(TARGET nano1g-control POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${_NANO1G_LOCAL_UNICORN}/lib/unicorn.dll"
+      "$<TARGET_FILE_DIR:nano1g-control>/unicorn.dll")
+  add_custom_command(TARGET nano1g-clicky-ui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${_NANO1G_LOCAL_UNICORN}/lib/unicorn.dll"
+      "$<TARGET_FILE_DIR:nano1g-clicky-ui>/unicorn.dll")
 endif()
 
 if(WIN32)
   target_compile_definitions(nano1g PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(nano1g-control PRIVATE _CRT_SECURE_NO_WARNINGS)
+  target_compile_definitions(nano1g-clicky-ui PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
 if(NANO1G_STRICT)
   if(MSVC)
     target_compile_options(nano1g PRIVATE /W4)
+    target_compile_options(nano1g-control PRIVATE /W4)
+    target_compile_options(nano1g-clicky-ui PRIVATE /W4)
   else()
     target_compile_options(nano1g PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(nano1g-control PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(nano1g-clicky-ui PRIVATE -Wall -Wextra -Wpedantic)
   endif()
 endif()
 

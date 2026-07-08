@@ -6,17 +6,27 @@
 #include "nano1g/firmware.h"
 #include "nano1g/ram.h"
 #include "nano1g/trace.h"
+#include "nano1g/web_frontend.h"
 
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static volatile sig_atomic_t stop_requested;
+
+static void handle_stop_signal(int sig) {
+    (void)sig;
+    stop_requested = 1;
+}
 
 static void usage(void) {
     puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
     puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
-    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--input SCRIPT]");
+    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
+    puts("       [--web PORT] [--web-no-hold] [--run-forever]");
     puts("       [--trace-pc] [--trace-mmio] [--verbose]");
 }
 
@@ -113,8 +123,21 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.map_flash_zero = true;
         } else if (strcmp(a, "--virtual-memmap") == 0) {
             opts.virtual_memmap = true;
+        } else if (strcmp(a, "--ram-fill-zero") == 0) {
+            opts.ram_fill_zero = true;
         } else if (strcmp(a, "--input") == 0 && i + 1 < argc) {
             opts.input_script = argv[++i];
+        } else if (strcmp(a, "--web") == 0 && i + 1 < argc) {
+            uint32_t port = n1g_parse_u32(argv[++i], "web");
+            if (port == 0 || port > 65535u) {
+                n1g_die("--web port must be between 1 and 65535");
+            }
+            opts.web_enabled = true;
+            opts.web_port = (uint16_t)port;
+        } else if (strcmp(a, "--web-no-hold") == 0) {
+            opts.web_no_hold = true;
+        } else if (strcmp(a, "--run-forever") == 0) {
+            opts.run_forever = true;
         } else if (strcmp(a, "--trace-pc") == 0) {
             opts.trace_pc = true;
         } else if (strcmp(a, "--trace-mmio") == 0) {
@@ -262,9 +285,15 @@ static void apple_log_lcd_buffer_probes(n1g_state_t *s) {
 
 int main(int argc, char **argv) {
     n1g_state_t s;
+    n1g_web_server_t web;
     memset(&s, 0, sizeof(s));
+    memset(&web, 0, sizeof(web));
     s.opts = parse_args(argc, argv);
     memset(s.flash.bytes, 0xff, sizeof(s.flash.bytes));
+    signal(SIGINT, handle_stop_signal);
+#ifdef SIGTERM
+    signal(SIGTERM, handle_stop_signal);
+#endif
 
     if (s.opts.input_script) {
         n1g_info(&s, "input script accepted for future injection: %s", s.opts.input_script);
@@ -293,16 +322,21 @@ int main(int argc, char **argv) {
         destroy_state(&s);
         return 1;
     }
+    if (s.opts.web_enabled && !n1g_web_start(&s, &web, s.opts.web_port)) {
+        destroy_state(&s);
+        return 1;
+    }
 
-    n1g_info(&s, "start max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u",
+    n1g_info(&s, "start max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u",
              (unsigned long long)s.opts.max_insns,
              s.opts.slice_insns,
              s.opts.timer_divider,
-             s.opts.rtc_usec_per_tick);
+             s.opts.rtc_usec_per_tick,
+             s.opts.run_forever ? 1u : 0u);
     uint64_t remaining = s.opts.max_insns;
-    while (remaining > 0) {
+    while ((s.opts.run_forever || remaining > 0) && !stop_requested) {
         uint32_t slice = s.opts.slice_insns;
-        if (remaining < slice) {
+        if (!s.opts.run_forever && remaining < slice) {
             slice = (uint32_t)remaining;
         }
         if (!n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice)) {
@@ -314,7 +348,15 @@ int main(int argc, char **argv) {
             }
         }
         n1g_bus_tick(&s);
-        remaining -= slice;
+        if (!s.opts.run_forever) {
+            remaining -= slice;
+        }
+        if (s.opts.web_enabled && (s.counters.device_ticks & 0xffu) == 0) {
+            n1g_web_poll(&s, &web, true);
+        }
+    }
+    if (s.opts.web_enabled) {
+        n1g_web_poll(&s, &web, false);
     }
 
     apple_log_lcd_buffer_probes(&s);
@@ -403,6 +445,86 @@ int main(int argc, char **argv) {
                 (unsigned long long)s.counters.apple_lcd_task_hits[16],
                 (unsigned long long)s.counters.apple_lcd_task_hits[17]);
         n1g_info(&s,
+                "apple_lcd_path_hits q_wait_53b20=%llu q_after_53b28=%llu q_cmp_53b30=%llu q_empty_53b34=%llu submit_53b38=%llu link_255a4=%llu link_after_255b0=%llu link_store_255b4=%llu lookup_25274=%llu dirty_4b74c=%llu wait_45dfc=%llu reset_45e6c=%llu",
+                (unsigned long long)s.counters.apple_lcd_path_hits[0],
+                (unsigned long long)s.counters.apple_lcd_path_hits[1],
+                (unsigned long long)s.counters.apple_lcd_path_hits[2],
+                (unsigned long long)s.counters.apple_lcd_path_hits[3],
+                (unsigned long long)s.counters.apple_lcd_path_hits[4],
+                (unsigned long long)s.counters.apple_lcd_path_hits[5],
+                (unsigned long long)s.counters.apple_lcd_path_hits[6],
+                (unsigned long long)s.counters.apple_lcd_path_hits[7],
+                (unsigned long long)s.counters.apple_lcd_path_hits[8],
+                (unsigned long long)s.counters.apple_lcd_path_hits[9],
+                (unsigned long long)s.counters.apple_lcd_path_hits[10],
+                (unsigned long long)s.counters.apple_lcd_path_hits[11]);
+        n1g_info(&s,
+                "apple_lcd_path_last q_after_53b28=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x lr:0x%08x q_cmp_53b30=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x lr:0x%08x link_after_255b0=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x lr:0x%08x link_store_255b4=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x lr:0x%08x active_plus8=0x%08x",
+                s.counters.apple_lcd_path_last[1][0],
+                s.counters.apple_lcd_path_last[1][1],
+                s.counters.apple_lcd_path_last[1][2],
+                s.counters.apple_lcd_path_last[1][3],
+                s.counters.apple_lcd_path_last[1][4],
+                s.counters.apple_lcd_path_last[1][5],
+                s.counters.apple_lcd_path_last[2][0],
+                s.counters.apple_lcd_path_last[2][1],
+                s.counters.apple_lcd_path_last[2][2],
+                s.counters.apple_lcd_path_last[2][3],
+                s.counters.apple_lcd_path_last[2][4],
+                s.counters.apple_lcd_path_last[2][5],
+                s.counters.apple_lcd_path_last[6][0],
+                s.counters.apple_lcd_path_last[6][1],
+                s.counters.apple_lcd_path_last[6][2],
+                s.counters.apple_lcd_path_last[6][3],
+                s.counters.apple_lcd_path_last[6][4],
+                s.counters.apple_lcd_path_last[6][5],
+                s.counters.apple_lcd_path_last[7][0],
+                s.counters.apple_lcd_path_last[7][1],
+                s.counters.apple_lcd_path_last[7][2],
+                s.counters.apple_lcd_path_last[7][3],
+                s.counters.apple_lcd_path_last[7][4],
+                s.counters.apple_lcd_path_last[7][5],
+                read32_or_zero(&s, active + 8u));
+        n1g_info(&s,
+                "apple_lcd_producer_hits enter_540a0=%llu pre_54104=%llu call_54108=%llu deliver_5410c=%llu enqueue_a_54194=%llu enqueue_b_541ac=%llu branch_541cc=%llu store_541d4=%llu tail_541dc=%llu post_54208=%llu exit_54210=%llu",
+                (unsigned long long)s.counters.apple_lcd_producer_hits[0],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[1],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[2],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[3],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[4],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[5],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[6],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[7],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[8],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[9],
+                (unsigned long long)s.counters.apple_lcd_producer_hits[10]);
+        n1g_info(&s,
+                "apple_lcd_producer_last deliver_5410c=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x r5:0x%08x sp:0x%08x lr:0x%08x enqueue_a_54194=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x r5:0x%08x sp:0x%08x lr:0x%08x tail_541dc=r0:0x%08x r1:0x%08x r2:0x%08x r3:0x%08x r4:0x%08x r5:0x%08x sp:0x%08x lr:0x%08x",
+                s.counters.apple_lcd_producer_last[3][0],
+                s.counters.apple_lcd_producer_last[3][1],
+                s.counters.apple_lcd_producer_last[3][2],
+                s.counters.apple_lcd_producer_last[3][3],
+                s.counters.apple_lcd_producer_last[3][4],
+                s.counters.apple_lcd_producer_last[3][5],
+                s.counters.apple_lcd_producer_last[3][6],
+                s.counters.apple_lcd_producer_last[3][7],
+                s.counters.apple_lcd_producer_last[4][0],
+                s.counters.apple_lcd_producer_last[4][1],
+                s.counters.apple_lcd_producer_last[4][2],
+                s.counters.apple_lcd_producer_last[4][3],
+                s.counters.apple_lcd_producer_last[4][4],
+                s.counters.apple_lcd_producer_last[4][5],
+                s.counters.apple_lcd_producer_last[4][6],
+                s.counters.apple_lcd_producer_last[4][7],
+                s.counters.apple_lcd_producer_last[8][0],
+                s.counters.apple_lcd_producer_last[8][1],
+                s.counters.apple_lcd_producer_last[8][2],
+                s.counters.apple_lcd_producer_last[8][3],
+                s.counters.apple_lcd_producer_last[8][4],
+                s.counters.apple_lcd_producer_last[8][5],
+                s.counters.apple_lcd_producer_last[8][6],
+                s.counters.apple_lcd_producer_last[8][7]);
+        n1g_info(&s,
                 "apple_exit active=0x%08x active_words=0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x queue_slot=0x%08x queue_head=0x%08x timer=0x%08x,0x%08x,0x%08x,0x%08x intc_cpu=0x%08x/0x%08x/0x%08x/0x%08x intc_cop=0x%08x/0x%08x/0x%08x/0x%08x",
                 active,
                 read32_or_zero(&s, active),
@@ -462,6 +584,14 @@ int main(int argc, char **argv) {
                 read32_or_zero(&s, 0x10705a2cu));
     }
 
+    if (s.opts.web_enabled && !s.opts.web_no_hold && !stop_requested) {
+        n1g_info(&s, "web frontend holding final frame; press Ctrl+C to exit");
+        while (!stop_requested) {
+            n1g_web_poll(&s, &web, false);
+            n1g_web_sleep_ms(16);
+        }
+    }
+    n1g_web_stop(&web);
     destroy_state(&s);
     return 0;
 }

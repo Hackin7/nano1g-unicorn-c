@@ -1,5 +1,7 @@
 #include "nano1g/ram.h"
 
+#include "nano1g/trace.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,8 +11,10 @@ bool n1g_ram_init(n1g_state_t *s) {
     if (!s->ram.sdram || !s->ram.fastram) {
         return false;
     }
-    memset(s->ram.sdram, 0x2d, N1G_SDRAM_SIZE);
-    memset(s->ram.fastram, 0x2d, N1G_FASTRAM_SIZE);
+    uint8_t fill = s->opts.ram_fill_zero ? 0x00u : 0x2du;
+    memset(s->ram.sdram, fill, N1G_SDRAM_SIZE);
+    memset(s->ram.fastram, fill, N1G_FASTRAM_SIZE);
+    n1g_info(s, "ram fill byte=0x%02x", fill);
     return true;
 }
 

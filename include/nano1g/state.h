@@ -47,11 +47,16 @@ typedef struct n1g_opts {
     uint32_t entry;
     uint32_t dump_addr;
     uint32_t dump_count;
+    uint16_t web_port;
     bool entry_set;
     bool dump_set;
     bool firmware_from_disk;
     bool map_flash_zero;
     bool virtual_memmap;
+    bool ram_fill_zero;
+    bool web_enabled;
+    bool web_no_hold;
+    bool run_forever;
     bool trace_pc;
     bool trace_mmio;
     bool verbose;
@@ -153,6 +158,10 @@ typedef struct n1g_i2c {
 
 typedef struct n1g_opto {
     uint32_t regs[0x100 / 4];
+    uint32_t button_bits;
+    uint8_t wheel_pos;
+    uint64_t input_events;
+    char last_input[32];
 } n1g_opto_t;
 
 typedef struct n1g_usb {
@@ -163,6 +172,19 @@ typedef struct n1g_lcd2 {
     uint32_t regs[0x200 / 4];
     uint16_t pixels[N1G_LCD_W * N1G_LCD_H];
     uint32_t cursor;
+    uint32_t block_ctrl;
+    uint32_t block_config;
+    uint32_t block_pixels_remaining;
+    uint16_t command;
+    uint8_t window_x0;
+    uint8_t window_y0;
+    uint8_t window_x1;
+    uint8_t window_y1;
+    uint8_t cursor_x;
+    uint8_t cursor_y;
+    uint8_t pending_data_hi;
+    bool pending_command;
+    bool pending_data;
     uint64_t words;
     bool dirty;
 } n1g_lcd2_t;
@@ -192,6 +214,10 @@ typedef struct n1g_counters {
     uint64_t apple_pc_hits[10];
     uint64_t apple_ui_hits[16];
     uint64_t apple_lcd_task_hits[18];
+    uint64_t apple_lcd_path_hits[12];
+    uint32_t apple_lcd_path_last[12][6];
+    uint64_t apple_lcd_producer_hits[12];
+    uint32_t apple_lcd_producer_last[12][8];
 } n1g_counters_t;
 
 typedef struct n1g_state {
