@@ -26,12 +26,12 @@ read/write coverage, timer-to-interrupt-controller coverage, direct-mode
 flash-at-zero coverage, EVP local-vector coverage, and a memory-controller MMAP
 remap smoke. The current full run also includes a payload-reference smoke for
 the extracted Apple `osos` marker scan and asserts the direct AUPD low-memory
-flash-command probe:
+flash-command probe plus the flash-zero SST ID path:
 
 ```text
 ctest --test-dir build-mingw --output-on-failure
-100% tests passed, 0 tests failed out of 25
-Total Test time (real) = 20.71 sec
+100% tests passed, 0 tests failed out of 26
+Total Test time (real) = 22.85 sec
 ```
 
 The Apple smoke test now asserts the no-HLE contract: no instruction shims, no
@@ -125,10 +125,10 @@ dump is still needed for a real Apple no-HLE boot handoff.
 
 `smoke_flash_commands` assembles a tiny ARM probe that copies its flash-command
 routine into fast RAM, sends the NOR read-ID command, and verifies the guest sees
-the Intel manufacturer ID:
+the SST manufacturer ID used by the native AUPD flash table:
 
 ```text
-dump32 addr=0x40000100 0x00000089 ...
+dump32 addr=0x40000100 0x000000bf ...
 ```
 
 `smoke_map_flash_zero` assembles a tiny fast-RAM direct-mode probe, enables
@@ -136,7 +136,7 @@ dump32 addr=0x40000100 0x00000089 ...
 to read-array mode:
 
 ```text
-dump32 addr=0x40000100 0x00000089 0xffffffff
+dump32 addr=0x40000100 0x000000bf 0xffffffff
 ```
 
 `smoke_disk_firmware` proves direct boot can source `osos` from the firmware
@@ -194,7 +194,7 @@ entries to expose SDRAM at logical zero and NOR flash at `0x20000000`, then
 verifies both mappings from native ARM code:
 
 ```text
-dump32 addr=0x40000100 0x13572468 0x00000089
+dump32 addr=0x40000100 0x13572468 0x000000bf
 ```
 
 `smoke_i2c_pmu` assembles a tiny ARM probe that sets the PMU register pointer
@@ -438,9 +438,9 @@ dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d ...
 So direct AUPD execution is useful updater evidence, but it is not the native
 producer of the Apple `osos` fast-RAM handoff table. The low-memory write probe
 also shows a concrete hardware-semantic gap: with the direct-mode SDRAM alias at
-zero, AUPD's native Intel-style flash command sequence is not reaching the NOR
+zero, AUPD's native software-ID flash command sequence is not reaching the NOR
 model. The readback confirms it sees SDRAM/vector bytes (`0x0006`) instead of
-the modeled Intel manufacturer ID (`0x0089`).
+the modeled SST manufacturer ID (`0x00bf`).
 
 Adding `--map-flash-zero` keeps that RAM-loaded updater shape while exposing the
 modeled NOR device at address zero. The run reaches the native parser and real
@@ -466,6 +466,8 @@ build-mingw\nano1g.exe \
 
 ```text
 flash map ptr addr=0x00000000 size=0x100000
+apple low0 read pc=0x10004794 addr=0x00000000 size=2 value=0x000000bf low0_map=2 flash_mode=1
+apple low0 read pc=0x100047a4 addr=0x00000002 size=2 value=0x0000273f low0_map=2 flash_mode=1
 aupd parser pc=0x10001760 r0=0x1003bb60 ... r0_words=0x46775570,0x0000001c,0x666c7368,0x00002000
 swi diag string ptr=0x40016f65 "0"
 swi exception core=0 int=2 insn=0xef123456 lr=0x10001d18 vector=0x00000008 cpsr=0x600000d3
@@ -488,10 +490,11 @@ dump32 addr=0xf000f000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x
 summary guest_insns=2267861 ticks=2267861 mmio_r=1592 mmio_w=66 lcd_words=0 disk_reads=0 irq=0 pc=0x00000008
 ```
 
-The EVP and MMAP models are therefore useful hardware plumbing, but they do not
-by themselves move AUPD past the erased low-vector fetch. That missing setup
-likely belongs to earlier bootloader state, not to host-side sysinfo or UI
-fabrication.
+The corrected SST software-ID model lets AUPD match a native flash table entry,
+so the remaining flash-zero stop is no longer a generic-ID problem. The EVP and
+MMAP models are useful hardware plumbing, but they do not by themselves move
+AUPD past the erased low-vector fetch. That missing setup likely belongs to
+earlier bootloader state, not to host-side sysinfo or UI fabrication.
 
 ```text
 aupd index=2 file_off=0x1553a00 len=0x851dc addr=0x10000000 entry=0x10000000 checksum=0x04835edd

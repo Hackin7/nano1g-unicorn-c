@@ -47,7 +47,7 @@ if(NOT result EQUAL 0)
 endif()
 
 set(output "${stdout}\n${stderr}")
-string(FIND "${output}" "dump32 addr=0x40000100 0x00000089 0xffffffff" id_pos)
+string(FIND "${output}" "dump32 addr=0x40000100 0x000000bf 0xffffffff" id_pos)
 if(id_pos EQUAL -1)
   message(FATAL_ERROR "map-flash-zero smoke did not observe flash ID then erased array: ${output}")
 endif()

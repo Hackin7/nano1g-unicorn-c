@@ -47,7 +47,7 @@ if(NOT result EQUAL 0)
 endif()
 
 set(output "${stdout}\n${stderr}")
-string(FIND "${output}" "dump32 addr=0x40000100 0x13572468 0x00000089" marker_pos)
+string(FIND "${output}" "dump32 addr=0x40000100 0x13572468 0x000000bf" marker_pos)
 if(marker_pos EQUAL -1)
   message(FATAL_ERROR "MMAP remap smoke did not observe SDRAM low map and flash alias: ${output}")
 endif()

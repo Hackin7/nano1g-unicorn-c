@@ -49,8 +49,8 @@ static void enter_id(n1g_state_t *s) {
     for (uint32_t i = 0; i < sizeof(s->flash.saved_window); i++) {
         s->flash.bytes[i] = 0xffu;
     }
-    put16(s->flash.bytes, 0x00u, 0x0089u); /* Intel manufacturer ID. */
-    put16(s->flash.bytes, 0x02u, 0x0018u); /* Generic PP-era NOR device ID. */
+    put16(s->flash.bytes, 0x00u, 0x00bfu); /* SST manufacturer ID. */
+    put16(s->flash.bytes, 0x02u, 0x273fu); /* SST39WF800A, 1 MiB PP-era NOR. */
 }
 
 static void enter_cfi(n1g_state_t *s) {
