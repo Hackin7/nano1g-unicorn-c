@@ -65,6 +65,10 @@ Useful options:
   loaded disk image and load its `osos` entry instead of using `--firmware`.
 - `--flash-rom PATH`: load a NOR/boot-ROM image, required with
   `--boot-mode flash`.
+- `--map-flash-zero`: in direct mode, keep the firmware payload at
+  `--load-addr` but map the modeled NOR flash at `0x00000000` instead of the
+  low SDRAM alias. This is useful for RAM-loaded updater probes that still issue
+  flash commands to address zero.
 - `--dump32 ADDR --dump-count N`: print up to 32 words after execution, useful
   for small hardware smoke probes.
 - `--slice-insns N`: Unicorn instructions per device tick, default `1`.
@@ -85,6 +89,17 @@ Useful audit tools:
 - `tools/inspect_boot_sources.py`: compare updater ZIP, wrapped firmware, and
   disk firmware payloads while labeling boot/sysinfo-looking byte patterns by
   source region.
+- `tools/audit_boot_sources.py`: classify local boot-source candidates as
+  wrapped firmware bundles, updater-style flash images, or raw reset-vector
+  candidates without treating any of them as Apple boot ROMs by guesswork.
+- `tools/inspect_aupd_batch.py`: scan files for the native AUPD updater's
+  `FwUp` 28-byte command records and required `!dnE` end marker.
+- `tools/inspect_aupd_layout.py`: decode the decrypted AUPD reset relocation
+  constants and probe the parser destination area.
+- `tools/inspect_payload_refs.py`: scan extracted Apple payloads for word-aligned
+  raw references, ARM literal-load references, and simple `adr` references to
+  boot/sysinfo marker strings without treating unaligned byte coincidences as
+  code evidence.
 - `tools/inspect_fat32.py`: inspect the FAT32 data partition and map absolute
   disk offsets back to file paths.
 - `tools/decrypt_aupd.py`: decrypt the wrapped Apple `aupd` payload using the
@@ -102,6 +117,9 @@ Implemented foundation:
 - Central physical bus with MMIO forwarding hooks.
 - Initial device stubs for interrupt controller, timers, CPU control, DMA,
   I2C/opto, LCD2, flash, and ATA-like disk reads.
+- PP peripheral identity now reports the Nano-class PP5022-style `PP20` /
+  `20D ` values, so Apple direct boot chooses the 128 KiB fast-RAM handoff slot
+  at `0x4001ff18`.
 - GPIO register latching plus PP502x `+0x800` atomic bitwise mirror writes.
 - Boot reset loader that loads the requested firmware image into guest memory
   and initializes CPU handoff registers.
@@ -132,10 +150,43 @@ Implemented foundation:
   writes, busy polling, and readback through native MMIO transactions.
 - Basic Intel-style NOR read-array, read-ID, status, CFI, program, and block
   erase commands are modeled for boot ROM probing.
+- Direct boot has an opt-in `--map-flash-zero` mode for RAM-loaded firmware
+  payloads that need modeled NOR at address zero. A fast-RAM smoke verifies the
+  guest can issue a NOR read-ID command through this mapping.
+- The PP502x EVP exception-vector registers at `0x6000f000..0x6000f01f` are
+  latched, and `CACHE_CTL` bit 4 selects the local SWI/IRQ vectors. A native
+  smoke verifies SVC dispatch through the modeled local vector.
+- The PP502x memory-controller MMAP registers at `0xf000f000..0xf000f03f`
+  latch guest writes and apply the documented iPod-style remap case: logical
+  zero can be remapped to SDRAM, while NOR flash can be exposed at
+  `0x20000000`. A native smoke starts with flash at zero, programs MMAP, then
+  verifies low SDRAM and the flash alias from guest code.
+- The Unicorn SWI hook logs Apple updater `svc 0x123456` diagnostic text in
+  verbose mode without replacing guest exception handling.
 - Apple firmware starts without instruction shims, synthetic sysinfo/model RAM,
   or synthetic framebuffer output. It currently stops early because the real
   boot metadata/sysinfo source is not modeled yet. The native Language screen is
   not working.
+- The decrypted Apple `aupd` payload can run in flash mode as native ARM code
+  far enough to probe ATA and emit its own diagnostic text, but it behaves like
+  an updater waiting for an update command stream and currently reports
+  `END MARKER - NOT FOUND`. A read-only parser hook shows it is pointed at
+  uninitialized SDRAM (`0x1003bb50`, filled with `0x2d`), not a stream read from
+  the current disk fixture. It is not a stock boot ROM replacement.
+- Running decrypted `aupd` as a direct RAM payload at `0x10000000` reaches its
+  relocated `Pyld` / `FwUp` command records natively. Combining that with
+  `--map-flash-zero` exposes a real next hardware question: the updater also
+  uses the low ARM SWI vector for diagnostics, while NOR flash commands/readback
+  occupy the same address range. With blank modeled flash at zero, the first
+  `svc 0x123456` vectors to `0x00000008` and fetches `0xffffffff`; an MMIO trace
+  and follow-up MMAP register dump show AUPD does not program MMAP or enable
+  local vector remap before this diagnostic, so this path stops before any Apple
+  UI code.
+- `tools/inspect_payload_refs.py` currently finds no ARM literal-load, `adr`, or
+  nearby function-start references from extracted `osos` code to the early
+  `booting!`, `IsyS`, or `SysI` marker strings. The few `booting!` address
+  matches are raw aligned table/data hits, plus unaligned coincidences, so they
+  are not treated as a native handoff producer.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.
@@ -165,7 +216,8 @@ Still expected before real Apple Language-screen parity:
 - exact interrupt/timer semantics under larger `--slice-insns` values;
 - native Apple boot ROM or flash dump. The current local artifact set still
   contains Apple wrapped firmware/disk images, patched experiments, screenshots,
-  and analysis files, but no obvious stock boot ROM image;
+  and analysis files, but no obvious stock boot ROM image; CTest runs
+  `tools/audit_boot_sources.py` to keep that boot-source classification checked;
 - complete IDE command sequencing;
 - broader PMU/RTC/input-device register behavior once native firmware probes
   more of those devices;

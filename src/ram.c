@@ -34,6 +34,9 @@ uint8_t *n1g_ram_ptr(n1g_state_t *s, uint32_t addr, size_t size) {
             return s->ram.sdram + off;
         }
     }
+    if (s->low0_map == N1G_LOW0_RAM && addr + size - 1 < N1G_SDRAM_SIZE) {
+        return s->ram.sdram + addr;
+    }
     if (addr >= N1G_FASTRAM_BASE && addr + size - 1 < N1G_FASTRAM_BASE + N1G_FASTRAM_SIZE) {
         return s->ram.fastram + (addr - N1G_FASTRAM_BASE);
     }

@@ -25,6 +25,12 @@ typedef enum n1g_boot_mode {
     N1G_BOOT_FLASH = 1
 } n1g_boot_mode_t;
 
+typedef enum n1g_low0_map {
+    N1G_LOW0_NONE = 0,
+    N1G_LOW0_RAM = 1,
+    N1G_LOW0_FLASH = 2
+} n1g_low0_map_t;
+
 typedef struct n1g_opts {
     const char *firmware_path;
     const char *flash_path;
@@ -43,6 +49,7 @@ typedef struct n1g_opts {
     bool entry_set;
     bool dump_set;
     bool firmware_from_disk;
+    bool map_flash_zero;
     bool trace_pc;
     bool trace_mmio;
     bool verbose;
@@ -113,6 +120,10 @@ typedef struct n1g_devcon {
 typedef struct n1g_cachecon {
     uint32_t regs[0x1000 / 4];
 } n1g_cachecon_t;
+
+typedef struct n1g_evp {
+    uint32_t regs[8];
+} n1g_evp_t;
 
 typedef struct n1g_memcon {
     uint32_t regs[0x10000 / 4];
@@ -188,6 +199,7 @@ typedef struct n1g_state {
     n1g_cpucon_t cpucon;
     n1g_devcon_t devcon;
     n1g_cachecon_t cachecon;
+    n1g_evp_t evp;
     n1g_memcon_t memcon;
     n1g_dma_t dma;
     n1g_gpio_t gpio;
@@ -200,6 +212,8 @@ typedef struct n1g_state {
     FILE *trace;
     void *mmio_contexts[32];
     size_t mmio_context_count;
+    n1g_low0_map_t low0_map;
+    bool flash_alias_mapped;
 } n1g_state_t;
 
 #endif

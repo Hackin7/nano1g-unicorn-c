@@ -27,6 +27,10 @@ void n1g_dev_devcon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32
 uint32_t n1g_dev_cachecon_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_cachecon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 
+void n1g_dev_evp_init(n1g_state_t *s);
+uint32_t n1g_dev_evp_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_evp_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+
 uint32_t n1g_dev_memcon_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_memcon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 

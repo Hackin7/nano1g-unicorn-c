@@ -76,6 +76,54 @@ static int core_index_from_uc(n1g_state_t *s, uc_engine *uc) {
     return -1;
 }
 
+static bool read_guest_byte(uc_engine *uc, uint32_t addr, uint8_t *out) {
+    return uc_mem_read(uc, addr, out, sizeof(*out)) == UC_ERR_OK;
+}
+
+static void log_swi_diagnostic(uc_engine *uc, n1g_state_t *s, uint32_t insn) {
+    if (!s->opts.verbose || insn != 0xef123456u) {
+        return;
+    }
+
+    uint32_t op = 0;
+    uint32_t ptr = 0;
+    uc_reg_read(uc, UC_ARM_REG_R0, &op);
+    uc_reg_read(uc, UC_ARM_REG_R1, &ptr);
+
+    static uint32_t logs;
+    if (logs >= 80u) {
+        return;
+    }
+    logs++;
+
+    if (op == 3u) {
+        uint8_t ch = 0;
+        if (read_guest_byte(uc, ptr, &ch)) {
+            n1g_log(s, "swi diag char 0x%02x '%c'", ch, ch >= 32u && ch < 127u ? (char)ch : '.');
+        } else {
+            n1g_log(s, "swi diag char unreadable ptr=0x%08x", ptr);
+        }
+        return;
+    }
+
+    if (op == 4u) {
+        char text[129];
+        uint32_t i = 0;
+        for (; i + 1u < sizeof(text); i++) {
+            uint8_t ch = 0;
+            if (!read_guest_byte(uc, ptr + i, &ch) || ch == 0) {
+                break;
+            }
+            text[i] = (ch >= 32u && ch < 127u) ? (char)ch : '.';
+        }
+        text[i] = '\0';
+        n1g_log(s, "swi diag string ptr=0x%08x \"%s\"", ptr, text);
+        return;
+    }
+
+    n1g_log(s, "swi diag op=%u ptr=0x%08x", op, ptr);
+}
+
 static bool enter_swi_exception(uc_engine *uc, n1g_state_t *s, uint32_t pc, uint32_t intno) {
     uint32_t insn = 0;
     uint32_t lr_svc = 0;
@@ -90,10 +138,12 @@ static bool enter_swi_exception(uc_engine *uc, n1g_state_t *s, uint32_t pc, uint
         return false;
     }
 
+    log_swi_diagnostic(uc, s, insn);
+
     uint32_t old_cpsr = 0;
     uc_reg_read(uc, UC_ARM_REG_CPSR, &old_cpsr);
     uint32_t svc_cpsr = (old_cpsr & ~0x3fu) | 0x93u;
-    uint32_t vector = 0x08u;
+    uint32_t vector = (s->cachecon.regs[0] & 0x10u) ? s->evp.regs[2] : 0x08u;
 
     uc_reg_write(uc, UC_ARM_REG_CPSR, &svc_cpsr);
     uc_reg_write(uc, UC_ARM_REG_SPSR, &old_cpsr);
@@ -131,6 +181,74 @@ static uint32_t ram_read32_or_zero(n1g_state_t *s, uint32_t addr) {
     uint32_t value = 0;
     (void)n1g_ram_read(s, addr, 4, &value);
     return value;
+}
+
+static void format_guest_bytes(uc_engine *uc, uint32_t addr, char *hex, size_t hex_size, char *ascii, size_t ascii_size) {
+    uint8_t bytes[32];
+    memset(bytes, 0, sizeof(bytes));
+    if (uc_mem_read(uc, addr, bytes, sizeof(bytes)) != UC_ERR_OK) {
+        snprintf(hex, hex_size, "unreadable");
+        snprintf(ascii, ascii_size, "unreadable");
+        return;
+    }
+
+    size_t pos = 0;
+    for (size_t i = 0; i < sizeof(bytes) && pos + 3u < hex_size; i++) {
+        pos += (size_t)snprintf(hex + pos, hex_size - pos, "%02x", bytes[i]);
+    }
+    hex[hex_size - 1u] = '\0';
+
+    size_t text_len = sizeof(bytes);
+    if (text_len >= ascii_size) {
+        text_len = ascii_size - 1u;
+    }
+    for (size_t i = 0; i < text_len; i++) {
+        ascii[i] = (bytes[i] >= 32u && bytes[i] < 127u) ? (char)bytes[i] : '.';
+    }
+    ascii[text_len] = '\0';
+}
+
+static void log_aupd_parser_probe(uc_engine *uc, n1g_state_t *s, uint64_t address) {
+    if (address < 0x10000000u) {
+        return;
+    }
+
+    static uint32_t logs;
+    if (logs >= 48u) {
+        return;
+    }
+    logs++;
+
+    uint32_t r[6] = {0};
+    uint32_t lr = 0;
+    uint32_t sp = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+
+    char hex[80];
+    char ascii[40];
+    format_guest_bytes(uc, r[0], hex, sizeof(hex), ascii, sizeof(ascii));
+
+    n1g_log(s,
+            "aupd parser pc=0x%08llx r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x r5=0x%08x lr=0x%08x sp=0x%08x r0_words=0x%08x,0x%08x,0x%08x,0x%08x bytes=%s ascii=\"%s\"",
+            (unsigned long long)address,
+            r[0],
+            r[1],
+            r[2],
+            r[3],
+            r[4],
+            r[5],
+            lr,
+            sp,
+            ram_read32_or_zero(s, r[0]),
+            ram_read32_or_zero(s, r[0] + 4u),
+            ram_read32_or_zero(s, r[0] + 8u),
+            ram_read32_or_zero(s, r[0] + 12u),
+            hex,
+            ascii);
 }
 
 static void apple_track_progress(n1g_state_t *s, uint64_t address) {
@@ -277,6 +395,11 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
     }
 
     apple_track_progress(s, address);
+
+    if (address == 0x10001760u || address == 0x10000ee4u ||
+        address == 0x10001078u || address == 0x10001afcu) {
+        log_aupd_parser_probe(uc, s, address);
+    }
 
     if (address == 0x00032840u || address == 0x00048060u ||
         address == 0x0004ee20u || address == 0x0005410cu ||
@@ -990,14 +1113,25 @@ static void hook_flash_write(uc_engine *uc,
                              void *user_data) {
     (void)type;
     n1g_state_t *s = (n1g_state_t *)user_data;
-    if (address >= N1G_FLASH_SIZE || size <= 0 || size > 4) {
+    uint64_t offset = address;
+    if (address >= N1G_FLASH_ALIAS_BASE && address < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE) {
+        offset = address - N1G_FLASH_ALIAS_BASE;
+    } else if (address < N1G_FLASH_SIZE && s->low0_map != N1G_LOW0_FLASH) {
+        return;
+    }
+    if (offset >= N1G_FLASH_SIZE || size <= 0 || size > 4) {
         return;
     }
 
-    n1g_dev_flash_write(s, (uint32_t)address, (uint32_t)size, (uint32_t)value);
+    n1g_dev_flash_write(s, (uint32_t)offset, (uint32_t)size, (uint32_t)value);
 
     /* Keep fallback Unicorn maps coherent; map_ptr users see s->flash.bytes. */
-    (void)uc_mem_write(uc, N1G_FLASH_BASE, s->flash.bytes, 0x100u);
+    if (s->low0_map == N1G_LOW0_FLASH) {
+        (void)uc_mem_write(uc, N1G_FLASH_BASE, s->flash.bytes, 0x100u);
+    }
+    if (s->flash_alias_mapped) {
+        (void)uc_mem_write(uc, N1G_FLASH_ALIAS_BASE, s->flash.bytes, 0x100u);
+    }
 }
 
 static bool map_ram_one(n1g_state_t *s,
@@ -1023,30 +1157,37 @@ static bool map_ram_one(n1g_state_t *s,
     return uc_mem_write(uc, addr, ptr, size) == UC_ERR_OK;
 }
 
-static bool map_flash_one(n1g_state_t *s, uc_engine *uc) {
+static bool map_flash_one_at(n1g_state_t *s, uc_engine *uc, uint64_t addr, const char *name) {
     uc_err err = uc_mem_map_ptr(uc,
-                                N1G_FLASH_BASE,
+                                addr,
                                 N1G_FLASH_SIZE,
                                 UC_PROT_ALL,
                                 s->flash.bytes);
     if (err == UC_ERR_OK) {
-        n1g_log(s, "flash map ptr addr=0x%08x size=0x%x", N1G_FLASH_BASE, N1G_FLASH_SIZE);
+        n1g_log(s, "flash map ptr %s addr=0x%08llx size=0x%x",
+                name, (unsigned long long)addr, N1G_FLASH_SIZE);
         return true;
     }
 
-    n1g_log(s, "flash map ptr fallback addr=0x%08x size=0x%x: %s",
-            N1G_FLASH_BASE,
+    n1g_log(s, "flash map ptr fallback %s addr=0x%08llx size=0x%x: %s",
+            name,
+            (unsigned long long)addr,
             N1G_FLASH_SIZE,
             uc_strerror(err));
-    err = uc_mem_map(uc, N1G_FLASH_BASE, N1G_FLASH_SIZE, UC_PROT_ALL);
+    err = uc_mem_map(uc, addr, N1G_FLASH_SIZE, UC_PROT_ALL);
     if (err != UC_ERR_OK) {
-        n1g_log(s, "flash map fallback failed addr=0x%08x size=0x%x: %s",
-                N1G_FLASH_BASE,
+        n1g_log(s, "flash map fallback failed %s addr=0x%08llx size=0x%x: %s",
+                name,
+                (unsigned long long)addr,
                 N1G_FLASH_SIZE,
                 uc_strerror(err));
         return false;
     }
-    return uc_mem_write(uc, N1G_FLASH_BASE, s->flash.bytes, N1G_FLASH_SIZE) == UC_ERR_OK;
+    return uc_mem_write(uc, addr, s->flash.bytes, N1G_FLASH_SIZE) == UC_ERR_OK;
+}
+
+static bool map_flash_one(n1g_state_t *s, uc_engine *uc) {
+    return map_flash_one_at(s, uc, N1G_FLASH_BASE, "low0");
 }
 
 static bool map_mmio(n1g_state_t *s, uc_engine *uc, n1g_core_t core, uint32_t base, size_t size) {
@@ -1155,7 +1296,11 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x001d0900u, 0x001d0904u) &&
            add_code_hook(s, uc, 0x001d1348u, 0x001d134cu) &&
            add_code_hook(s, uc, 0x001bd000u, 0x001be000u) &&
-           add_code_hook(s, uc, 0x001c4100u, 0x001c4600u);
+           add_code_hook(s, uc, 0x001c4100u, 0x001c4600u) &&
+           add_code_hook(s, uc, 0x10000ee4u, 0x10000ee8u) &&
+           add_code_hook(s, uc, 0x10001078u, 0x1000107cu) &&
+           add_code_hook(s, uc, 0x10001760u, 0x10001764u) &&
+           add_code_hook(s, uc, 0x10001afcu, 0x10001b00u);
 }
 
 bool n1g_cpu_init(n1g_state_t *s) {
@@ -1174,13 +1319,21 @@ bool n1g_cpu_init(n1g_state_t *s) {
         if (!add_hook_checked(s, s->cpu[i].uc, UC_HOOK_INTR, (void *)hook_intr, 1, 0)) {
             return false;
         }
-        if (s->opts.boot_mode == N1G_BOOT_FLASH &&
+        if ((s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero) &&
             !add_hook_checked(s,
                               s->cpu[i].uc,
                               UC_HOOK_MEM_WRITE,
                               (void *)hook_flash_write,
                               N1G_FLASH_BASE,
                               N1G_FLASH_BASE + N1G_FLASH_SIZE - 1u)) {
+            return false;
+        }
+        if (!add_hook_checked(s,
+                              s->cpu[i].uc,
+                              UC_HOOK_MEM_WRITE,
+                              (void *)hook_flash_write,
+                              N1G_FLASH_ALIAS_BASE,
+                              N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE - 1u)) {
             return false;
         }
         if (s->opts.profile == N1G_PROFILE_APPLE &&
@@ -1223,10 +1376,13 @@ bool n1g_cpu_map_memory(n1g_state_t *s) {
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram1")) return false;
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + 2u * N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram2")) return false;
         if (!map_ram_one(s, uc, N1G_SDRAM_BASE + 3u * N1G_SDRAM_SIZE, N1G_SDRAM_SIZE, s->ram.sdram, "sdram3")) return false;
-        if (s->opts.boot_mode == N1G_BOOT_FLASH) {
+        if (s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero) {
             if (!map_flash_one(s, uc)) return false;
+            s->low0_map = N1G_LOW0_FLASH;
         } else if (!map_ram_one(s, uc, 0x00000000u, N1G_SDRAM_SIZE, s->ram.sdram, "low0")) {
             return false;
+        } else {
+            s->low0_map = N1G_LOW0_RAM;
         }
         if (!map_ram_one(s, uc, 0x02000000u, N1G_SDRAM_SIZE, s->ram.sdram, "low1")) return false;
         if (!map_ram_one(s, uc, 0x04000000u, N1G_SDRAM_SIZE, s->ram.sdram, "low2")) return false;
@@ -1242,6 +1398,72 @@ bool n1g_cpu_map_memory(n1g_state_t *s) {
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_PPCON_BASE, 0x00010000u)) return false;
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_EIDE_BASE, 0x00001000u)) return false;
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_MEMCON_BASE, 0x00010000u)) return false;
+    }
+    return true;
+}
+
+static bool remap_low0(n1g_state_t *s, n1g_low0_map_t kind) {
+    if (s->low0_map == kind) {
+        return true;
+    }
+
+    size_t old_size = s->low0_map == N1G_LOW0_FLASH ? N1G_FLASH_SIZE : N1G_SDRAM_SIZE;
+    for (int c = 0; c < N1G_CORE_COUNT; c++) {
+        uc_engine *uc = s->cpu[c].uc;
+        uc_err err = uc_mem_unmap(uc, N1G_FLASH_BASE, old_size);
+        if (err != UC_ERR_OK) {
+            n1g_log(s, "low0 unmap failed size=0x%zx: %s", old_size, uc_strerror(err));
+            return false;
+        }
+        if (kind == N1G_LOW0_FLASH) {
+            if (!map_flash_one(s, uc)) return false;
+        } else {
+            if (!map_ram_one(s, uc, N1G_FLASH_BASE, N1G_SDRAM_SIZE, s->ram.sdram, "low0-remap")) return false;
+        }
+    }
+    s->low0_map = kind;
+    n1g_cpu_flush_tb(s);
+    return true;
+}
+
+static bool map_flash_alias(n1g_state_t *s) {
+    if (s->flash_alias_mapped) {
+        return true;
+    }
+
+    for (int c = 0; c < N1G_CORE_COUNT; c++) {
+        if (!map_flash_one_at(s, s->cpu[c].uc, N1G_FLASH_ALIAS_BASE, "alias200")) {
+            return false;
+        }
+    }
+    s->flash_alias_mapped = true;
+    n1g_cpu_flush_tb(s);
+    return true;
+}
+
+bool n1g_cpu_apply_memmap(n1g_state_t *s) {
+    bool want_low_sdram = false;
+    bool want_flash_alias = false;
+
+    for (uint32_t i = 0; i < 8u; i++) {
+        uint32_t logical = s->memcon.regs[(0xf000u / 4u) + i * 2u];
+        uint32_t physical = s->memcon.regs[(0xf004u / 4u) + i * 2u];
+        uint32_t logical_match = logical & 0x3fff0000u;
+        uint32_t physical_target = physical & 0x3fff0000u;
+
+        if (logical_match == 0x00000000u && physical_target == N1G_SDRAM_BASE) {
+            want_low_sdram = true;
+        }
+        if (logical_match == N1G_FLASH_ALIAS_BASE && physical_target == N1G_FLASH_BASE) {
+            want_flash_alias = true;
+        }
+    }
+
+    if (want_low_sdram && !remap_low0(s, N1G_LOW0_RAM)) {
+        return false;
+    }
+    if (want_flash_alias && !map_flash_alias(s)) {
+        return false;
     }
     return true;
 }
@@ -1274,7 +1496,8 @@ void n1g_cpu_raise_irq(n1g_state_t *s, n1g_core_t core) {
     uc_reg_write(s->cpu[core].uc, UC_ARM_REG_CPSR, &irq_cpsr);
     uc_reg_write(s->cpu[core].uc, UC_ARM_REG_SPSR, &cpsr);
     uc_reg_write(s->cpu[core].uc, UC_ARM_REG_LR, &lr_irq);
-    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_PC, &(uint32_t){0x18u});
+    uint32_t vector = (s->cachecon.regs[0] & 0x10u) ? s->evp.regs[6] : 0x18u;
+    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_PC, &vector);
 
     s->cpu[core].halted = false;
     s->cpucon.ctl[core] &= ~0xe0000000u;

@@ -15,7 +15,8 @@ static void usage(void) {
     puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
-    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--input SCRIPT] [--trace-pc] [--trace-mmio] [--verbose]");
+    puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--input SCRIPT]");
+    puts("       [--trace-pc] [--trace-mmio] [--verbose]");
 }
 
 static bool parse_profile(const char *v, n1g_profile_t *out) {
@@ -101,6 +102,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             }
         } else if (strcmp(a, "--firmware-from-disk") == 0) {
             opts.firmware_from_disk = true;
+        } else if (strcmp(a, "--map-flash-zero") == 0) {
+            opts.map_flash_zero = true;
         } else if (strcmp(a, "--input") == 0 && i + 1 < argc) {
             opts.input_script = argv[++i];
         } else if (strcmp(a, "--trace-pc") == 0) {
@@ -121,6 +124,9 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     }
     if (opts.boot_mode == N1G_BOOT_FLASH && !opts.flash_path) {
         n1g_die("--flash-rom is required in flash boot mode");
+    }
+    if (opts.boot_mode == N1G_BOOT_FLASH && opts.map_flash_zero) {
+        n1g_die("--map-flash-zero is only meaningful in direct boot mode");
     }
     return opts;
 }
@@ -257,6 +263,7 @@ int main(int argc, char **argv) {
     if (!n1g_ram_init(&s)) {
         n1g_die("failed to allocate RAM");
     }
+    n1g_dev_evp_init(&s);
     if (!n1g_disk_load(&s, s.opts.disk_path)) {
         destroy_state(&s);
         return 1;

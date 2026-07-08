@@ -48,6 +48,7 @@ add_executable(nano1g
   src/dev_cpucon.c
   src/dev_devcon.c
   src/dev_cachecon.c
+  src/dev_evp.c
   src/dev_memcon.c
   src/dev_dma.c
   src/dev_gpio.c
@@ -130,12 +131,33 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_disk_firmware.cmake)
+    add_test(NAME smoke_boot_source_audit
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_boot_source_audit.cmake)
+    add_test(NAME smoke_payload_refs
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_payload_refs.cmake)
+    add_test(NAME smoke_aupd_batch_audit
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_aupd_batch_audit.cmake)
     add_test(NAME smoke_flash_commands
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_flash_commands.cmake)
+    add_test(NAME smoke_map_flash_zero
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_map_flash_zero.cmake)
     add_test(NAME smoke_gpio_atomic
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>
@@ -167,6 +189,18 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_syscon_latches.cmake)
+    add_test(NAME smoke_evp_vectors
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_evp_vectors.cmake)
+    add_test(NAME smoke_mmap_remap
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_mmap_remap.cmake)
     add_test(NAME smoke_i2c_pmu
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>

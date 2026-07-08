@@ -38,6 +38,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr < N1G_FLASH_BASE + N1G_FLASH_SIZE) {
         return n1g_dev_flash_read(s, addr - N1G_FLASH_BASE, size);
     }
+    if (addr >= N1G_FLASH_ALIAS_BASE && addr < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE) {
+        return n1g_dev_flash_read(s, addr - N1G_FLASH_ALIAS_BASE, size);
+    }
     if (addr >= N1G_CPUID_BASE && addr <= N1G_CPUID_BASE + 0xfff) {
         return mask_value(core == N1G_CORE_COP ? 0xaaaaaaaau : 0x55555555u, size);
     }
@@ -64,6 +67,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     }
     if (addr >= N1G_CACHECON_BASE && addr <= N1G_CACHECON_BASE + 0xfff) {
         return n1g_dev_cachecon_read(s, addr - N1G_CACHECON_BASE, size);
+    }
+    if (addr >= N1G_EVP_BASE && addr <= N1G_EVP_BASE + 0x1f) {
+        return n1g_dev_evp_read(s, addr - N1G_EVP_BASE, size);
     }
     if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) {
         return n1g_dev_ppcon_read(s, addr - N1G_PPCON_BASE, size);
@@ -93,6 +99,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
     }
     if (addr < N1G_FLASH_BASE + N1G_FLASH_SIZE) {
         n1g_dev_flash_write(s, addr - N1G_FLASH_BASE, size, value);
+    } else if (addr >= N1G_FLASH_ALIAS_BASE && addr < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE) {
+        n1g_dev_flash_write(s, addr - N1G_FLASH_ALIAS_BASE, size, value);
     } else if (addr >= N1G_MAILBOX_BASE && addr <= N1G_MAILBOX_BASE + 0x2f) {
         n1g_dev_mailbox_write(s, core, addr - N1G_MAILBOX_BASE, size, value);
     } else if (addr >= N1G_INTC_BASE && addr <= N1G_INTC_BASE + 0x1ff) {
@@ -109,6 +117,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_gpio_write(s, addr - N1G_GPIO_BASE, size, value);
     } else if (addr >= N1G_CACHECON_BASE && addr <= N1G_CACHECON_BASE + 0xfff) {
         n1g_dev_cachecon_write(s, addr - N1G_CACHECON_BASE, size, value);
+    } else if (addr >= N1G_EVP_BASE && addr <= N1G_EVP_BASE + 0x1f) {
+        n1g_dev_evp_write(s, addr - N1G_EVP_BASE, size, value);
     } else if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) {
         n1g_dev_ppcon_write(s, addr - N1G_PPCON_BASE, size, value);
     } else if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) {

@@ -31,9 +31,9 @@ static uint32_t merge_write(uint32_t old_value, uint32_t offset, uint32_t size, 
 static uint32_t default_value(uint32_t aligned) {
     switch (aligned) {
     case PPCON_PP_VER1:
-        return 0x00000022u;
+        return 0x30325050u; /* "PP20": PP5022-class Nano fast-RAM layout. */
     case PPCON_PP_VER2:
-        return 0x00005022u;
+        return 0x20443032u; /* "20D " */
     case PPCON_STRAP_A:
     case PPCON_STRAP_B:
         return 0;
