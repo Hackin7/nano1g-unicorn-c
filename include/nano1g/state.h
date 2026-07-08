@@ -32,6 +32,7 @@ typedef enum n1g_low0_map {
 } n1g_low0_map_t;
 
 typedef struct n1g_opts {
+    const char *run_label;
     const char *firmware_path;
     const char *flash_path;
     const char *disk_path;

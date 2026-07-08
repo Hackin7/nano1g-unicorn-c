@@ -37,6 +37,9 @@ static const char index_html[] =
 "#container{margin:auto;max-width:560px;width:min(100%,560px);padding:20px}"
 "h1{font-size:24px;margin:12px 0;text-align:center}"
 "#status,#stats{font-size:14px;margin:12px 0;text-align:center}"
+"#firmware-bar{align-items:center;display:flex;gap:8px;justify-content:center;margin:12px 0;font-size:14px}"
+"#firmware-select{margin-left:6px}"
+"#restart-btn{border:1px solid #c6cbd1;background:#fff;border-radius:4px;padding:4px 9px;color:#24292f}"
 "#stats{align-items:center;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}"
 "#stats span{white-space:nowrap}"
 "#ipod-container{transform:scale(1.8);transform-origin:top center;height:720px}"
@@ -57,6 +60,7 @@ static const char index_html[] =
 "</style></head><body><div id=\"container\">"
 "<h1>iPod Nano 1G</h1>"
 "<div id=\"status\">Loading...</div>"
+"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-stage0\">Apple stage0 OS</option><option value=\"apple-direct\">Apple official direct</option><option value=\"rockbox\">Rockbox</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
 "<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
 "<div id=\"ipod-container\" tabindex=\"0\">"
 "<div id=\"ipod-body\">"
@@ -74,11 +78,15 @@ static const char index_html[] =
 "const canvas=document.getElementById('ipod-screen');"
 "const ctx=canvas.getContext('2d');"
 "const status_el=document.getElementById('status');"
+"const firmware_select=document.getElementById('firmware-select');"
+"const restart_btn=document.getElementById('restart-btn');"
 "const ipod=document.getElementById('ipod-container');"
 "let seq=-1,last_frame=0,wheel_down=false,last_angle=0;"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
+"async function restart_selected(){set_status('Restarting '+firmware_select.value+'...');seq=-1;try{const r=await fetch('/control?restart='+encodeURIComponent(firmware_select.value),{cache:'no-store'});if(!r.ok)set_status('Restart failed');}catch(e){set_status('Restart failed: '+e.message);}}"
+"restart_btn.onclick=e=>{e.preventDefault();restart_selected();};"
 "function button_url(name,state){return '/input?button='+encodeURIComponent(name)+'&state='+state;}"
 "function bind_button(selector,name){const el=document.querySelector(selector);let release_timer=null;"
 "const down=e=>{e.preventDefault();clearTimeout(release_timer);el.classList.add('active');send_input(button_url(name,'down'));};"
@@ -100,7 +108,7 @@ static const char index_html[] =
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status(s.running?'Running':'Stopped');text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
 "if(s.frame_seq!==seq){seq=s.frame_seq;draw_frame(seq);}}catch(e){set_status('Offline');text('running','offline');}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -268,12 +276,23 @@ static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len) {
 }
 
 static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool running) {
-    char body[640];
+    const char *label = s->opts.run_label ? s->opts.run_label : "custom";
+    const char *preset = "custom";
+    if (strcmp(label, "Apple stage0 OS") == 0) {
+        preset = "apple-stage0";
+    } else if (strcmp(label, "Apple official direct") == 0) {
+        preset = "apple-direct";
+    } else if (strcmp(label, "Rockbox") == 0) {
+        preset = "rockbox";
+    }
+
+    char body[768];
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
                      "\"device_ticks\":%llu,\"lcd_words\":%llu,\"disk_reads\":%llu,"
                      "\"irq_count\":%llu,\"input_events\":%llu,\"input\":\"%s\","
+                     "\"label\":\"%s\",\"preset\":\"%s\","
                      "\"cpu_pc\":\"0x%08x\"}\n",
                      running ? "true" : "false",
                      (unsigned long long)web->frame_seq,
@@ -284,6 +303,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->counters.irq_count,
                      (unsigned long long)s->opto.input_events,
                      s->opto.last_input[0] ? s->opto.last_input : "none",
+                     label,
+                     preset,
                      n1g_cpu_pc(s, N1G_CORE_CPU));
     if (n <= 0 || (size_t)n >= sizeof(body)) {
         return false;
@@ -317,6 +338,33 @@ static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
         const char msg[] = "{\"ok\":false}\n";
         return send_response(fd, "400 Bad Request", "application/json", msg, sizeof(msg) - 1u);
     }
+    const char msg[] = "{\"ok\":true}\n";
+    return send_response(fd, "200 OK", "application/json", msg, sizeof(msg) - 1u);
+}
+
+static bool valid_restart_preset(const char *preset) {
+    return strcmp(preset, "rockbox") == 0 ||
+           strcmp(preset, "apple-direct") == 0 ||
+           strcmp(preset, "apple-stage0") == 0;
+}
+
+static const char *restart_preset_from_query(const char *query) {
+    if (query_has(query, "restart=rockbox")) return "rockbox";
+    if (query_has(query, "restart=apple-direct")) return "apple-direct";
+    if (query_has(query, "restart=apple-stage0")) return "apple-stage0";
+    return NULL;
+}
+
+static bool send_control(n1g_web_server_t *web, intptr_t fd, const char *query) {
+    const char *preset = restart_preset_from_query(query);
+    if (!preset || !valid_restart_preset(preset)) {
+        const char msg[] = "{\"ok\":false}\n";
+        return send_response(fd, "400 Bad Request", "application/json", msg, sizeof(msg) - 1u);
+    }
+
+    strncpy(web->restart_preset, preset, sizeof(web->restart_preset) - 1u);
+    web->restart_preset[sizeof(web->restart_preset) - 1u] = '\0';
+    web->restart_requested = true;
     const char msg[] = "{\"ok\":true}\n";
     return send_response(fd, "200 OK", "application/json", msg, sizeof(msg) - 1u);
 }
@@ -355,6 +403,8 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         (void)send_status(s, web, fd, running);
     } else if (strcmp(path, "/input") == 0) {
         (void)send_input(s, fd, query ? query : "");
+    } else if (strcmp(path, "/control") == 0) {
+        (void)send_control(web, fd, query ? query : "");
     } else if (strcmp(path, "/frame.rgba") == 0) {
         size_t len = 0;
         uint8_t *rgba = make_rgba(s, &len);
@@ -449,6 +499,19 @@ void n1g_web_poll(n1g_state_t *s, n1g_web_server_t *web, bool running) {
         handle_client(s, web, c, running);
         close_fd(c);
     }
+}
+
+bool n1g_web_take_restart(n1g_web_server_t *web, char *preset, size_t preset_size) {
+    if (!web || !web->restart_requested || preset_size == 0) {
+        return false;
+    }
+    strncpy(preset, web->restart_preset, preset_size - 1u);
+    preset[preset_size - 1u] = '\0';
+    web->restart_requested = false;
+    web->restart_preset[0] = '\0';
+    web->last_lcd_words = UINT64_MAX;
+    web->frame_seq++;
+    return true;
 }
 
 void n1g_web_stop(n1g_web_server_t *web) {

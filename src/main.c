@@ -20,6 +20,16 @@ static void handle_stop_signal(int sig) {
     stop_requested = 1;
 }
 
+static const char apple_stage0_label[] = "Apple stage0 OS";
+static const char apple_direct_label[] = "Apple official direct";
+static const char rockbox_label[] = "Rockbox";
+
+static const char apple_stage0_fw[] = "tmp/stage0-sysinfo-osos-probe.bin";
+static const char apple_direct_fw[] = "../artifacts/firmware/apple_nano_14.5.3.1_fw.bin";
+static const char apple_disk[] = "../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img";
+static const char rockbox_fw[] = "../artifacts/firmware/rockbox.ipod";
+static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-gpt.img";
+
 static void usage(void) {
     puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
@@ -169,6 +179,111 @@ static void destroy_state(n1g_state_t *s) {
     n1g_ram_destroy(s);
 }
 
+static void infer_run_label(n1g_opts_t *opts) {
+    if (opts->run_label) {
+        return;
+    }
+    if (opts->profile == N1G_PROFILE_APPLE) {
+        if (opts->firmware_path && strstr(opts->firmware_path, "stage0")) {
+            opts->run_label = apple_stage0_label;
+        } else {
+            opts->run_label = apple_direct_label;
+        }
+    } else {
+        opts->run_label = rockbox_label;
+    }
+}
+
+static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
+    const bool web_enabled = opts->web_enabled;
+    const uint16_t web_port = opts->web_port;
+    const bool web_no_hold = opts->web_no_hold;
+    const char *ppm_path = opts->ppm_path;
+    const bool trace_pc = opts->trace_pc;
+    const bool trace_mmio = opts->trace_mmio;
+    const bool verbose = opts->verbose;
+
+    memset(opts, 0, sizeof(*opts));
+    opts->boot_mode = N1G_BOOT_DIRECT;
+    opts->dump_count = 1;
+    opts->web_enabled = web_enabled;
+    opts->web_port = web_port;
+    opts->web_no_hold = web_no_hold;
+    opts->run_forever = true;
+    opts->ppm_path = ppm_path;
+    opts->trace_pc = trace_pc;
+    opts->trace_mmio = trace_mmio;
+    opts->verbose = verbose;
+    opts->rtc_usec_per_tick = 1;
+    opts->timer_divider = 20;
+    opts->load_addr = N1G_SDRAM_BASE;
+
+    if (strcmp(preset, "apple-stage0") == 0) {
+        opts->run_label = apple_stage0_label;
+        opts->profile = N1G_PROFILE_APPLE;
+        opts->firmware_path = apple_stage0_fw;
+        opts->disk_path = apple_disk;
+        opts->max_insns = 175000000u;
+        opts->slice_insns = 512;
+        opts->timer_divider = 1;
+        opts->rtc_usec_per_tick = 512;
+        opts->load_addr = N1G_FASTRAM_BASE;
+        opts->entry = N1G_FASTRAM_BASE;
+        opts->entry_set = true;
+    } else if (strcmp(preset, "apple-direct") == 0) {
+        opts->run_label = apple_direct_label;
+        opts->profile = N1G_PROFILE_APPLE;
+        opts->firmware_path = apple_direct_fw;
+        opts->disk_path = apple_disk;
+        opts->max_insns = 175000000u;
+        opts->slice_insns = 128;
+    } else {
+        opts->run_label = rockbox_label;
+        opts->profile = N1G_PROFILE_ROCKBOX;
+        opts->firmware_path = rockbox_fw;
+        opts->disk_path = rockbox_disk;
+        opts->max_insns = 20000000u;
+        opts->slice_insns = 512;
+        opts->timer_divider = 1;
+    }
+}
+
+static bool init_state(n1g_state_t *s, n1g_opts_t opts) {
+    memset(s, 0, sizeof(*s));
+    infer_run_label(&opts);
+    s->opts = opts;
+    memset(s->flash.bytes, 0xff, sizeof(s->flash.bytes));
+
+    if (s->opts.input_script) {
+        n1g_info(s, "input script accepted for future injection: %s", s->opts.input_script);
+    }
+    if (!n1g_ram_init(s)) {
+        n1g_die("failed to allocate RAM");
+    }
+    n1g_dev_evp_init(s);
+    if (!n1g_disk_load(s, s->opts.disk_path)) {
+        destroy_state(s);
+        return false;
+    }
+    if (!n1g_load_flash_rom(s)) {
+        destroy_state(s);
+        return false;
+    }
+    if (!n1g_cpu_init(s)) {
+        destroy_state(s);
+        return false;
+    }
+    if (!n1g_boot_reset(s)) {
+        destroy_state(s);
+        return false;
+    }
+    if (!n1g_cpu_map_memory(s)) {
+        destroy_state(s);
+        return false;
+    }
+    return true;
+}
+
 static uint32_t read32_or_zero(n1g_state_t *s, uint32_t addr) {
     uint32_t value = 0;
     (void)n1g_ram_read(s, addr, 4, &value);
@@ -288,75 +403,88 @@ int main(int argc, char **argv) {
     n1g_web_server_t web;
     memset(&s, 0, sizeof(s));
     memset(&web, 0, sizeof(web));
-    s.opts = parse_args(argc, argv);
-    memset(s.flash.bytes, 0xff, sizeof(s.flash.bytes));
+    n1g_opts_t opts = parse_args(argc, argv);
     signal(SIGINT, handle_stop_signal);
 #ifdef SIGTERM
     signal(SIGTERM, handle_stop_signal);
 #endif
 
-    if (s.opts.input_script) {
-        n1g_info(&s, "input script accepted for future injection: %s", s.opts.input_script);
-    }
-    if (!n1g_ram_init(&s)) {
-        n1g_die("failed to allocate RAM");
-    }
-    n1g_dev_evp_init(&s);
-    if (!n1g_disk_load(&s, s.opts.disk_path)) {
-        destroy_state(&s);
+    if (!init_state(&s, opts)) {
         return 1;
     }
-    if (!n1g_load_flash_rom(&s)) {
-        destroy_state(&s);
-        return 1;
-    }
-    if (!n1g_cpu_init(&s)) {
-        destroy_state(&s);
-        return 1;
-    }
-    if (!n1g_boot_reset(&s)) {
-        destroy_state(&s);
-        return 1;
-    }
-    if (!n1g_cpu_map_memory(&s)) {
-        destroy_state(&s);
-        return 1;
-    }
+    bool state_active = true;
     if (s.opts.web_enabled && !n1g_web_start(&s, &web, s.opts.web_port)) {
         destroy_state(&s);
         return 1;
     }
 
-    n1g_info(&s, "start max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u",
-             (unsigned long long)s.opts.max_insns,
-             s.opts.slice_insns,
-             s.opts.timer_divider,
-             s.opts.rtc_usec_per_tick,
-             s.opts.run_forever ? 1u : 0u);
-    uint64_t remaining = s.opts.max_insns;
-    while ((s.opts.run_forever || remaining > 0) && !stop_requested) {
-        uint32_t slice = s.opts.slice_insns;
-        if (!s.opts.run_forever && remaining < slice) {
-            slice = (uint32_t)remaining;
-        }
-        if (!n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice)) {
-            break;
-        }
-        if (!s.cpu[N1G_CORE_COP].halted) {
-            if (!n1g_cpu_step_slice(&s, N1G_CORE_COP, slice)) {
+    int exit_code = 0;
+    bool restart_now = false;
+    char restart_preset[32] = {0};
+
+run_image:
+    do {
+        restart_now = false;
+        restart_preset[0] = '\0';
+        n1g_info(&s, "start image=%s max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u",
+                 s.opts.run_label ? s.opts.run_label : "custom",
+                 (unsigned long long)s.opts.max_insns,
+                 s.opts.slice_insns,
+                 s.opts.timer_divider,
+                 s.opts.rtc_usec_per_tick,
+                 s.opts.run_forever ? 1u : 0u);
+        uint64_t remaining = s.opts.max_insns;
+        while ((s.opts.run_forever || remaining > 0) && !stop_requested) {
+            uint32_t slice = s.opts.slice_insns;
+            if (!s.opts.run_forever && remaining < slice) {
+                slice = (uint32_t)remaining;
+            }
+            if (!n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice)) {
                 break;
             }
+            if (!s.cpu[N1G_CORE_COP].halted) {
+                if (!n1g_cpu_step_slice(&s, N1G_CORE_COP, slice)) {
+                    break;
+                }
+            }
+            n1g_bus_tick(&s);
+            if (!s.opts.run_forever) {
+                remaining -= slice;
+            }
+            if (s.opts.web_enabled && (s.counters.device_ticks & 0xffu) == 0) {
+                n1g_web_poll(&s, &web, true);
+                if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
+                    restart_now = true;
+                    break;
+                }
+            }
         }
-        n1g_bus_tick(&s);
-        if (!s.opts.run_forever) {
-            remaining -= slice;
+        if (s.opts.web_enabled) {
+            n1g_web_poll(&s, &web, false);
+            if (!restart_now && n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
+                restart_now = true;
+            }
         }
-        if (s.opts.web_enabled && (s.counters.device_ticks & 0xffu) == 0) {
-            n1g_web_poll(&s, &web, true);
+
+        if (!restart_now) {
+            break;
         }
-    }
-    if (s.opts.web_enabled) {
-        n1g_web_poll(&s, &web, false);
+
+        n1g_info(&s, "web restart requested preset=%s", restart_preset);
+        n1g_opts_t next = s.opts;
+        apply_run_preset(&next, restart_preset);
+        destroy_state(&s);
+        state_active = false;
+        if (!init_state(&s, next)) {
+            exit_code = 1;
+            break;
+        }
+        state_active = true;
+    } while (!stop_requested);
+
+    if (!state_active) {
+        n1g_web_stop(&web);
+        return exit_code;
     }
 
     apple_log_lcd_buffer_probes(&s);
@@ -588,10 +716,25 @@ int main(int argc, char **argv) {
         n1g_info(&s, "web frontend holding final frame; press Ctrl+C to exit");
         while (!stop_requested) {
             n1g_web_poll(&s, &web, false);
+            if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
+                n1g_info(&s, "web restart requested preset=%s", restart_preset);
+                n1g_opts_t next = s.opts;
+                apply_run_preset(&next, restart_preset);
+                destroy_state(&s);
+                state_active = false;
+                if (!init_state(&s, next)) {
+                    exit_code = 1;
+                    break;
+                }
+                state_active = true;
+                goto run_image;
+            }
             n1g_web_sleep_ms(16);
         }
     }
     n1g_web_stop(&web);
-    destroy_state(&s);
-    return 0;
+    if (state_active) {
+        destroy_state(&s);
+    }
+    return exit_code;
 }

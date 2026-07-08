@@ -4,6 +4,7 @@
 #include "nano1g/state.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct n1g_web_server {
@@ -11,11 +12,14 @@ typedef struct n1g_web_server {
     uint16_t port;
     uint64_t frame_seq;
     uint64_t last_lcd_words;
+    char restart_preset[32];
+    bool restart_requested;
     bool active;
 } n1g_web_server_t;
 
 bool n1g_web_start(n1g_state_t *s, n1g_web_server_t *web, uint16_t port);
 void n1g_web_poll(n1g_state_t *s, n1g_web_server_t *web, bool running);
+bool n1g_web_take_restart(n1g_web_server_t *web, char *preset, size_t preset_size);
 void n1g_web_stop(n1g_web_server_t *web);
 void n1g_web_sleep_ms(uint32_t ms);
 
