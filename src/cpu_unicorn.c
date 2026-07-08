@@ -1635,6 +1635,7 @@ bool n1g_cpu_map_memory(n1g_state_t *s) {
         if (!map_mmio(s, uc, (n1g_core_t)c, 0x64000000u, 0x00010000u)) return false;
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_PPCON_BASE, 0x00010000u)) return false;
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_EIDE_BASE, 0x00001000u)) return false;
+        if (!map_mmio(s, uc, (n1g_core_t)c, N1G_USB_BASE, 0x00001000u)) return false;
         if (!map_mmio(s, uc, (n1g_core_t)c, N1G_MEMCON_BASE, 0x00010000u)) return false;
     }
     return true;

@@ -86,6 +86,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) {
         return n1g_disk_read(s, addr - N1G_EIDE_BASE, size);
     }
+    if (addr >= N1G_USB_BASE && addr <= N1G_USB_BASE + 0xfff) {
+        return n1g_dev_usb_read(s, addr - N1G_USB_BASE, size);
+    }
     if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) {
         return n1g_dev_memcon_read(s, addr - N1G_MEMCON_BASE, size);
     }
@@ -129,6 +132,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_opto_write(s, addr - N1G_OPTO_BASE, size, value);
     } else if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) {
         n1g_disk_write(s, addr - N1G_EIDE_BASE, size, value);
+    } else if (addr >= N1G_USB_BASE && addr <= N1G_USB_BASE + 0xfff) {
+        n1g_dev_usb_write(s, addr - N1G_USB_BASE, size, value);
     } else if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) {
         n1g_dev_memcon_write(s, addr - N1G_MEMCON_BASE, size, value);
     }

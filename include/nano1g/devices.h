@@ -47,6 +47,9 @@ void n1g_dev_i2c_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
 uint32_t n1g_dev_opto_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_opto_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 
+uint32_t n1g_dev_usb_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_usb_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+
 uint32_t n1g_dev_lcd2_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_lcd2_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 bool n1g_dev_lcd2_write_ppm(n1g_state_t *s, const char *path);

@@ -155,6 +155,10 @@ typedef struct n1g_opto {
     uint32_t regs[0x100 / 4];
 } n1g_opto_t;
 
+typedef struct n1g_usb {
+    uint32_t regs[0x1000 / 4];
+} n1g_usb_t;
+
 typedef struct n1g_lcd2 {
     uint32_t regs[0x200 / 4];
     uint16_t pixels[N1G_LCD_W * N1G_LCD_H];
@@ -207,6 +211,7 @@ typedef struct n1g_state {
     n1g_gpio_t gpio;
     n1g_i2c_t i2c;
     n1g_opto_t opto;
+    n1g_usb_t usb;
     n1g_lcd2_t lcd2;
     n1g_flash_t flash;
     n1g_ppcon_t ppcon;

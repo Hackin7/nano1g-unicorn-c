@@ -55,6 +55,7 @@ add_executable(nano1g
   src/dev_gpio.c
   src/dev_i2c.c
   src/dev_opto.c
+  src/dev_usb.c
   src/dev_lcd2.c
   src/dev_ppcon.c
   src/dev_flash.c
@@ -292,6 +293,12 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_syscon_latches.cmake)
+    add_test(NAME smoke_usb_latches
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_usb_latches.cmake)
     add_test(NAME smoke_evp_vectors
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>

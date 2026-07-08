@@ -189,6 +189,10 @@ Implemented foundation:
   zero can be remapped to SDRAM, while NOR flash can be exposed at
   `0x20000000`. A native smoke starts with flash at zero, programs MMAP, then
   verifies low SDRAM and the flash alias from guest code.
+- The PP502x USB controller window at `0xc5000000..0xc5000fff` is mapped as
+  latched MMIO. Rockbox identifies this range as `USB_BASE`; Apple probes
+  `USB_BASE+0x184` during early UI bring-up, so mapping this as hardware MMIO
+  avoids an unmapped-memory fault without shimming firmware behavior.
 - Flash boot can now be combined with `--virtual-memmap`; a native smoke starts
   at the flash reset vector, copies code into SDRAM, programs PP MMAP, and
   verifies Unicorn fetches virtual zero from SDRAM while data reads still see
@@ -257,8 +261,10 @@ Implemented foundation:
   fast-RAM handoff table, loads the full wrapped Apple `osos` payload from the
   disk firmware partition through ATA, and branches into `osos`. The smoke
   verifies the native Apple handoff probe sees `IsyS`, the real SysInfo pointer,
-  and model word `0x02000000`; it still is not a Language-screen success
-  condition.
+  and model word `0x02000000`. With USB MMIO mapped, the same smoke now reaches
+  the native language loop, view delivery, and LCD dirty/post path. It still is
+  not a Language-screen success condition because no native LCD flush reaches
+  the modeled LCD yet.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.

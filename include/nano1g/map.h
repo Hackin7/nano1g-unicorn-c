@@ -38,6 +38,7 @@
 #define N1G_OPTO_BASE 0x7000c100u
 
 #define N1G_EIDE_BASE 0xc3000000u
+#define N1G_USB_BASE 0xc5000000u
 #define N1G_MEMCON_BASE 0xf0000000u
 
 #define N1G_LCD_W 176u
