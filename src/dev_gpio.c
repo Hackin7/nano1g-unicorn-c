@@ -15,7 +15,7 @@ uint32_t n1g_dev_gpio_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     uint32_t aligned = offset & ~3u;
     if (offset < sizeof(s->gpio.regs)) {
         uint32_t shift = (offset & 3u) * 8u;
-        uint32_t value = is_input_value_reg(aligned) ? 0u : s->gpio.regs[offset / 4u];
+        uint32_t value = is_input_value_reg(aligned) ? 0xffffffffu : s->gpio.regs[offset / 4u];
         return (value >> shift) & mask_for_size(size);
     }
     return 0;

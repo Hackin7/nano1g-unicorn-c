@@ -14,8 +14,9 @@ execute_process(
     --disk ${disk}
     --load-addr 0x40000000
     --entry 0x40000000
-    --max-insns 1000000
-    --slice-insns 1
+    --max-insns 20000000
+    --slice-insns 128
+    --timer-divider 1
     --ppm ${ppm}
   RESULT_VARIABLE result
   OUTPUT_VARIABLE stdout

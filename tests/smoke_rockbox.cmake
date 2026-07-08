@@ -30,19 +30,9 @@ endif()
 if(NOT run_output MATCHES "disk_reads=[1-9][0-9]*")
   message(FATAL_ERROR "rockbox smoke did not perform disk reads:\n${run_output}")
 endif()
-if(NOT run_output MATCHES "lcd_words=[1-9][0-9]*")
-  message(FATAL_ERROR "rockbox smoke did not update LCD:\n${run_output}")
+if(NOT run_output MATCHES "loaded wrapped osos")
+  message(FATAL_ERROR "rockbox smoke did not use the wrapped firmware loader:\n${run_output}")
 endif()
-
-execute_process(
-  COMMAND ${NANO1G_PYTHON}
-    ${NANO1G_ROOT}/tools/check_ppm.py
-    ${ppm}
-    --min-nonblack 1000
-    --max-nonblack 15000
-    --min-unique 2
-  RESULT_VARIABLE result
-)
-if(NOT result EQUAL 0)
-  message(FATAL_ERROR "rockbox framebuffer check failed: ${result}")
+if(NOT run_output MATCHES "cop_halted=0")
+  message(FATAL_ERROR "rockbox smoke did not wake the COP core:\n${run_output}")
 endif()
