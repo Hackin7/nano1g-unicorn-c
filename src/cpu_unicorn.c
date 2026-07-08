@@ -2,6 +2,7 @@
 
 #include "nano1g/bus.h"
 #include "nano1g/devices.h"
+#include "nano1g/memmap.h"
 #include "nano1g/ram.h"
 #include "nano1g/trace.h"
 
@@ -1620,19 +1621,29 @@ static bool map_flash_alias(n1g_state_t *s) {
 bool n1g_cpu_apply_memmap(n1g_state_t *s) {
     bool want_low_sdram = false;
     bool want_flash_alias = false;
+    n1g_mmap_entry_t entries[8];
 
     for (uint32_t i = 0; i < 8u; i++) {
         uint32_t logical = s->memcon.regs[(0xf000u / 4u) + i * 2u];
         uint32_t physical = s->memcon.regs[(0xf004u / 4u) + i * 2u];
-        uint32_t logical_match = logical & 0x3fff0000u;
-        uint32_t physical_target = physical & 0x3fff0000u;
+        entries[i] = n1g_mmap_decode(logical, physical);
+    }
 
-        if (logical_match == 0x00000000u && physical_target == N1G_SDRAM_BASE) {
-            want_low_sdram = true;
-        }
-        if (logical_match == N1G_FLASH_ALIAS_BASE && physical_target == N1G_FLASH_BASE) {
-            want_flash_alias = true;
-        }
+    uint32_t translated = 0;
+    if (n1g_mmap_translate(entries, 8u, 0x00000000u, N1G_MMAP_ACCESS_READ_DATA, &translated) &&
+        translated == N1G_SDRAM_BASE &&
+        n1g_mmap_translate(entries, 8u, 0x00000000u, N1G_MMAP_ACCESS_WRITE_DATA, &translated) &&
+        translated == N1G_SDRAM_BASE &&
+        n1g_mmap_translate(entries, 8u, 0x00000000u, N1G_MMAP_ACCESS_FETCH_CODE, &translated) &&
+        translated == N1G_SDRAM_BASE) {
+        want_low_sdram = true;
+    }
+
+    if (n1g_mmap_translate(entries, 8u, N1G_FLASH_ALIAS_BASE, N1G_MMAP_ACCESS_READ_DATA, &translated) &&
+        translated == N1G_FLASH_BASE &&
+        n1g_mmap_translate(entries, 8u, N1G_FLASH_ALIAS_BASE, N1G_MMAP_ACCESS_FETCH_CODE, &translated) &&
+        translated == N1G_FLASH_BASE) {
+        want_flash_alias = true;
     }
 
     if (want_low_sdram && !remap_low0(s, N1G_LOW0_RAM)) {

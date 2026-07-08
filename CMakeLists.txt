@@ -39,6 +39,7 @@ add_executable(nano1g
   src/cpu_unicorn.c
   src/bus.c
   src/ram.c
+  src/memmap.c
   src/boot_reset.c
   src/firmware.c
   src/disk_ata.c
@@ -87,6 +88,20 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(memmap_unit
+    tests/test_memmap.c
+    src/memmap.c
+  )
+  target_include_directories(memmap_unit PRIVATE include)
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(memmap_unit PRIVATE /W4)
+    else()
+      target_compile_options(memmap_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME memmap_unit COMMAND memmap_unit)
+
   add_test(NAME smoke_args COMMAND $<TARGET_FILE:nano1g> --help)
 
   find_package(Python3 COMPONENTS Interpreter QUIET)
