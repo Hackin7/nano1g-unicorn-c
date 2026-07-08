@@ -251,6 +251,68 @@ static void log_aupd_parser_probe(uc_engine *uc, n1g_state_t *s, uint64_t addres
             ascii);
 }
 
+static void log_apple_handoff_probe(uc_engine *uc, n1g_state_t *s, uint64_t address) {
+    static uint32_t logs;
+    if (logs >= 16u) {
+        return;
+    }
+    logs++;
+
+    uint32_t r[6] = {0};
+    uint32_t lr = 0;
+    uint32_t sp = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+
+    if (address == 0x00001388u) {
+        int core = core_index_from_uc(s, uc);
+        uint32_t pp_ver = n1g_dev_ppcon_read(s, 0, 4);
+        uint32_t pp_selector = (pp_ver >> 16) & 0xffu;
+        uint32_t cpuid = core == N1G_CORE_COP ? 0xaaaaaaaau : 0x55555555u;
+        n1g_log(s,
+                "apple handoff entry pc=0x%08llx core=%d cpuid=0x%08x ppver=0x%08x pp_selector=0x%02x expected_slot=%s",
+                (unsigned long long)address,
+                core,
+                cpuid,
+                pp_ver,
+                pp_selector,
+                (pp_selector == 0x32u || pp_selector == 0x36u) ? "0x4001ff18" : "0x40017f18");
+        return;
+    }
+
+    uint32_t handoff = r[4];
+    if (address == 0x00001398u) {
+        handoff = r[0];
+    }
+    uint32_t handoff_tag = ram_read32_or_zero(s, handoff);
+    uint32_t sysinfo = ram_read32_or_zero(s, handoff + 4u);
+    uint32_t sysinfo_e0 = 0;
+    uint32_t sysinfo_e4 = 0;
+    bool sysinfo_e0_ok = n1g_ram_read(s, sysinfo + 0xe0u, 4, &sysinfo_e0);
+    bool sysinfo_e4_ok = n1g_ram_read(s, sysinfo + 0xe4u, 4, &sysinfo_e4);
+
+    n1g_log(s,
+            "apple handoff probe pc=0x%08llx handoff=0x%08x tag=0x%08x sysinfo=0x%08x sysinfo_ram=%s sysinfo_e0=0x%08x sysinfo_e4=0x%08x r0=0x%08x r4=0x%08x lr=0x%08x sp=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x",
+            (unsigned long long)address,
+            handoff,
+            handoff_tag,
+            sysinfo,
+            (sysinfo_e0_ok || sysinfo_e4_ok) ? "yes" : "no",
+            sysinfo_e0,
+            sysinfo_e4,
+            r[0],
+            r[4],
+            lr,
+            sp,
+            ram_read32_or_zero(s, handoff),
+            ram_read32_or_zero(s, handoff + 4u),
+            ram_read32_or_zero(s, handoff + 8u),
+            ram_read32_or_zero(s, handoff + 12u));
+}
+
 static void apple_track_progress(n1g_state_t *s, uint64_t address) {
     switch ((uint32_t)address) {
     case 0x00024c48u:
@@ -399,6 +461,11 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
     if (address == 0x10001760u || address == 0x10000ee4u ||
         address == 0x10001078u || address == 0x10001afcu) {
         log_aupd_parser_probe(uc, s, address);
+    }
+
+    if (address == 0x00001388u || address == 0x00001398u ||
+        address == 0x000013acu || address == 0x000013b4u) {
+        log_apple_handoff_probe(uc, s, address);
     }
 
     if (address == 0x00032840u || address == 0x00048060u ||
@@ -1258,6 +1325,7 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
     return add_code_hook(s, uc, 0x0000c9a4u, 0x0000c9a8u) &&
            add_code_hook(s, uc, 0x0000c9f4u, 0x0000c9f8u) &&
            add_code_hook(s, uc, 0x0001fce4u, 0x0001fce8u) &&
+           add_code_hook(s, uc, 0x00001388u, 0x000013b8u) &&
            add_code_hook(s, uc, 0x00024d00u, 0x00024effu) &&
            add_code_hook(s, uc, 0x00024c40u, 0x00025030u) &&
            add_code_hook(s, uc, 0x00032840u, 0x00032844u) &&

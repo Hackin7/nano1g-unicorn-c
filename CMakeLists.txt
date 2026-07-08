@@ -226,6 +226,12 @@ if(BUILD_TESTING)
         -DNANO1G_PYTHON=${Python3_EXECUTABLE}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_nohle.cmake)
+    add_test(NAME smoke_apple_handoff_probe
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_handoff_probe.cmake)
   else()
     message(WARNING "Python3 not found; framebuffer smoke tests disabled")
   endif()

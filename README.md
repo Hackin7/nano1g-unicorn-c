@@ -187,6 +187,11 @@ Implemented foundation:
   `booting!`, `IsyS`, or `SysI` marker strings. The few `booting!` address
   matches are raw aligned table/data hits, plus unaligned coincidences, so they
   are not treated as a native handoff producer.
+- Apple verbose mode now has a read-only early handoff probe around
+  `0x00001388..0x000013b4`. It records the PP selector, selected fast-RAM
+  handoff slot, handoff tag, sysinfo pointer, and whether that pointer is
+  RAM-backed. `smoke_apple_handoff_probe` verifies the current direct `osos`
+  path still sees the untouched RAM fill pattern rather than seeded sysinfo.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.

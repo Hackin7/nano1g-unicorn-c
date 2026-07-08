@@ -29,8 +29,8 @@ extracted Apple `osos` marker scan:
 
 ```text
 ctest --test-dir build-mingw --output-on-failure
-100% tests passed, 0 tests failed out of 23
-Total Test time (real) = 17.97 sec
+100% tests passed, 0 tests failed out of 24
+Total Test time (real) = 18.18 sec
 ```
 
 The Apple smoke test now asserts the no-HLE contract: no instruction shims, no
@@ -353,6 +353,21 @@ The current scanner finds no ARM literal-load, simple `adr`, or nearby
 function-start references to these early markers. That is negative evidence: it
 does not prove what the missing boot handoff code is, but it keeps the visible
 strings in `osos` from being misread as an available native handoff producer.
+
+The verbose Apple handoff probe now captures the exact early direct-`osos`
+contract before the first invalid read:
+
+```text
+apple handoff entry pc=0x00001388 core=0 cpuid=0x55555555 ppver=0x30325050 pp_selector=0x32 expected_slot=0x4001ff18
+apple handoff probe pc=0x00001398 handoff=0x4001ff18 tag=0x2d2d2d2d sysinfo=0x2d2d2d2d sysinfo_ram=no ... words=0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d
+apple handoff probe pc=0x000013ac handoff=0x4001ff18 tag=0x2d2d2d2d sysinfo=0x2d2d2d2d sysinfo_ram=no ... words=0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d
+apple handoff probe pc=0x000013b4 handoff=0x4001ff18 tag=0x2d2d2d2d sysinfo=0x2d2d2d2d sysinfo_ram=no ... words=0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d,0x2d2d2d2d
+invalid memory type=19 pc=0x000013b4 addr=0x2d2d2e0d size=4 ...
+```
+
+`smoke_apple_handoff_probe` asserts those logs stay visible and that the
+handoff table remains the untouched RAM fill pattern. This is intentionally a
+blocker probe, not a boot fix.
 
 Extracting the decrypted AUPD flash directory produces `diskmode`, `diagmode`,
 and `logo` payloads. The current audit does not classify those extracted payloads
