@@ -29,8 +29,8 @@ extracted Apple `osos` marker scan:
 
 ```text
 ctest --test-dir build-mingw --output-on-failure
-100% tests passed, 0 tests failed out of 24
-Total Test time (real) = 18.18 sec
+100% tests passed, 0 tests failed out of 25
+Total Test time (real) = 20.74 sec
 ```
 
 The Apple smoke test now asserts the no-HLE contract: no instruction shims, no
@@ -424,6 +424,16 @@ dump32 addr=0x1003bb50 0x50796c64 0x00000010 0x00200000 0x00000000 0x46775570 0x
 
 This is not Apple OS boot yet, but it corrects the AUPD launch model: the
 updater entry is a RAM-loaded firmware payload, not a standalone NOR image.
+`smoke_aupd_direct_no_handoff` now covers this with a native 3M-instruction
+probe:
+
+```text
+aupd parser pc=0x10001760 ... r0_words=0x46775570,0x0000001c,0x666c7368,0x00002000
+dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d ...
+```
+
+So direct AUPD execution is useful updater evidence, but it is not the native
+producer of the Apple `osos` fast-RAM handoff table.
 
 Adding `--map-flash-zero` keeps that RAM-loaded updater shape while exposing the
 modeled NOR device at address zero. The run reaches the native parser and real

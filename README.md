@@ -174,14 +174,16 @@ Implemented foundation:
   uninitialized SDRAM (`0x1003bb50`, filled with `0x2d`), not a stream read from
   the current disk fixture. It is not a stock boot ROM replacement.
 - Running decrypted `aupd` as a direct RAM payload at `0x10000000` reaches its
-  relocated `Pyld` / `FwUp` command records natively. Combining that with
-  `--map-flash-zero` exposes a real next hardware question: the updater also
-  uses the low ARM SWI vector for diagnostics, while NOR flash commands/readback
-  occupy the same address range. With blank modeled flash at zero, the first
-  `svc 0x123456` vectors to `0x00000008` and fetches `0xffffffff`; an MMIO trace
-  and follow-up MMAP register dump show AUPD does not program MMAP or enable
-  local vector remap before this diagnostic, so this path stops before any Apple
-  UI code.
+  relocated `Pyld` / `FwUp` command records natively. `smoke_aupd_direct_no_handoff`
+  verifies that this path sees the expected native `FwUp/flsh` record but still
+  leaves the Apple `osos` fast-RAM handoff slot untouched. Combining the same
+  payload with `--map-flash-zero` exposes a real next hardware question: the
+  updater also uses the low ARM SWI vector for diagnostics, while NOR flash
+  commands/readback occupy the same address range. With blank modeled flash at
+  zero, the first `svc 0x123456` vectors to `0x00000008` and fetches
+  `0xffffffff`; an MMIO trace and follow-up MMAP register dump show AUPD does
+  not program MMAP or enable local vector remap before this diagnostic, so this
+  path stops before any Apple UI code.
 - `tools/inspect_payload_refs.py` currently finds no ARM literal-load, `adr`, or
   nearby function-start references from extracted `osos` code to the early
   `booting!`, `IsyS`, or `SysI` marker strings. The few `booting!` address
