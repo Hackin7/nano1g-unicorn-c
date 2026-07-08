@@ -20,6 +20,7 @@
 #define ATA_CMD_READ_MULTIPLE 0xc4u
 #define ATA_CMD_WRITE_MULTIPLE 0xc5u
 #define ATA_CMD_SET_MULTIPLE_MODE 0xc6u
+#define ATA_CMD_STANDBY_IMMEDIATE 0xe0u
 #define ATA_CMD_FLUSH_CACHE 0xe7u
 #define ATA_CMD_SET_FEATURES 0xefu
 #define ATA_CMD_IDENTIFY_DEVICE 0xecu
@@ -32,6 +33,8 @@
 #define PP_ATA_LBA_HIGH 0x1f4u
 #define PP_ATA_DEVICE 0x1f8u
 #define PP_ATA_COMMAND_STATUS 0x1fcu
+#define PP_IDE0_CFG 0x28u
+#define PP_IDE1_CFG 0x2cu
 #define PP_ATA_ALT_STATUS 0x3f8u
 
 typedef enum n1g_ata_transfer {
@@ -118,6 +121,8 @@ bool n1g_disk_load(n1g_state_t *s, const char *path) {
     if (!path) {
         build_identify(s);
         s->disk.status = ATA_DRDY;
+        s->disk.ide0_cfg = 0x08u;
+        s->disk.ide1_cfg = 0x08u;
         return true;
     }
     if (!n1g_read_file(path, &s->disk.data, &s->disk.size)) {
@@ -126,6 +131,8 @@ bool n1g_disk_load(n1g_state_t *s, const char *path) {
     }
     build_identify(s);
     s->disk.status = ATA_DRDY;
+    s->disk.ide0_cfg = 0x08u;
+    s->disk.ide1_cfg = 0x08u;
     n1g_info(s, "loaded disk %s size=%zu", path, s->disk.size);
     return true;
 }
@@ -331,6 +338,12 @@ static bool normalize_taskfile_offset(uint32_t offset, uint32_t *out) {
 
 uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     uint32_t reg = 0;
+    if (offset == PP_IDE0_CFG) {
+        return s->disk.ide0_cfg;
+    }
+    if (offset == PP_IDE1_CFG) {
+        return s->disk.ide1_cfg;
+    }
     if (offset == PP_ATA_ALT_STATUS) {
         return s->disk.status;
     }
@@ -361,8 +374,15 @@ uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
 }
 
 void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value) {
-    (void)size;
     uint32_t reg = 0;
+    if (offset == PP_IDE0_CFG) {
+        s->disk.ide0_cfg = value | 0x08u;
+        return;
+    }
+    if (offset == PP_IDE1_CFG) {
+        s->disk.ide1_cfg = value | 0x08u;
+        return;
+    }
     if (offset == PP_ATA_ALT_STATUS) {
         return;
     }
@@ -407,6 +427,7 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
             start_write(s);
         } else if (s->disk.command == ATA_CMD_SET_FEATURES ||
                    s->disk.command == ATA_CMD_SET_MULTIPLE_MODE ||
+                   s->disk.command == ATA_CMD_STANDBY_IMMEDIATE ||
                    s->disk.command == ATA_CMD_FLUSH_CACHE) {
             complete_nondata_command(s);
         } else {

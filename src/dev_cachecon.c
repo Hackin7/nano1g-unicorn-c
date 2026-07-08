@@ -1,5 +1,7 @@
 #include "nano1g/devices.h"
 
+#include "nano1g/cpu_unicorn.h"
+
 static uint32_t mask_for_size(uint32_t size) {
     if (size == 1u) return 0xffu;
     if (size == 2u) return 0xffffu;
@@ -32,4 +34,5 @@ void n1g_dev_cachecon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint
     }
     uint32_t *reg = &s->cachecon.regs[aligned / 4u];
     *reg = merge_write(*reg, offset, size, value);
+    n1g_cpu_flush_tb(s);
 }

@@ -736,8 +736,10 @@ static bool hook_mem_invalid(uc_engine *uc,
                              void *user_data) {
     n1g_state_t *s = (n1g_state_t *)user_data;
     uint32_t pc = 0;
+    uint32_t cpsr = 0;
     uint32_t regs[10] = {0};
     uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+    uc_reg_read(uc, UC_ARM_REG_CPSR, &cpsr);
     uc_reg_read(uc, UC_ARM_REG_R0, &regs[0]);
     uc_reg_read(uc, UC_ARM_REG_R1, &regs[1]);
     uc_reg_read(uc, UC_ARM_REG_R2, &regs[2]);
@@ -765,6 +767,7 @@ static bool hook_mem_invalid(uc_engine *uc,
             regs[7],
             regs[8],
             regs[9]);
+    n1g_log(s, "invalid cpsr=0x%08x", cpsr);
     if (s->opts.profile == N1G_PROFILE_APPLE) {
         n1g_log(s,
                 "apple invalid context r0_words=0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x r4_words=0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x",
@@ -1277,6 +1280,18 @@ void n1g_cpu_raise_irq(n1g_state_t *s, n1g_core_t core) {
     s->cpucon.ctl[core] &= ~0xe0000000u;
     s->counters.irq_count++;
     uc_emu_stop(s->cpu[core].uc);
+}
+
+void n1g_cpu_flush_tb(n1g_state_t *s) {
+#if defined(UC_CTL_TB_FLUSH)
+    for (int i = 0; i < N1G_CORE_COUNT; i++) {
+        if (s->cpu[i].uc) {
+            (void)uc_ctl_flush_tb(s->cpu[i].uc);
+        }
+    }
+#else
+    (void)s;
+#endif
 }
 
 uint32_t n1g_cpu_pc(n1g_state_t *s, n1g_core_t core) {

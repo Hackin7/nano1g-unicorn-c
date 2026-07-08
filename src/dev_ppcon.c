@@ -39,6 +39,8 @@ static uint32_t default_value(uint32_t aligned) {
         return 0;
     case 0x28u:
         return 0x80u;
+    case 0x30u:
+        return 0x08000000u;
     default:
         return 0;
     }

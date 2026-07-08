@@ -71,6 +71,8 @@ typedef struct n1g_disk {
     uint8_t command;
     uint8_t error;
     uint8_t status;
+    uint32_t ide0_cfg;
+    uint32_t ide1_cfg;
     uint8_t transfer_kind;
     uint16_t data_index;
     uint8_t identify[512];

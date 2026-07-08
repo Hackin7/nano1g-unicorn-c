@@ -275,6 +275,43 @@ firmware images or patched experiments, while `../artifacts/images/` contains
 disk images and `../artifacts/analysis/` contains extracted/disassembled `osos`
 material.
 
+Boot-source audit with `tools/inspect_boot_sources.py`:
+
+```text
+zip=..\iPod_14.1.3.1.zip members=Firmware-14.5.3.1,manifest.plist
+zip_member=Firmware-14.5.3.1 size=22907904 sha256=6fb166e09ca6c3452ca090d519fa058986b1f9b4326dde360e176e602154cfa2
+zip_compare=..\artifacts\firmware\apple_nano_14.5.3.1_fw.bin equal=True
+
+..\artifacts\firmware\apple_nano_14.5.3.1_fw.bin wrapped=yes base=0x0 entries=3
+  image[00] name=osos file_off=0x4600 len=0x54ef30 addr=0x10000000 entry=0x10000000 entropy=6.101 sha256=2d34721c1d36f592
+  image[01] name=rsrc file_off=0x553800 len=0x1000000 addr=0x10000000 entry=0x10000000 entropy=7.734 sha256=3b2d2c9a5da96eec
+  image[02] name=aupd file_off=0x1553a00 len=0x851dc addr=0x10000000 entry=0x10000000 entropy=7.997 sha256=8796d0e12daac236
+```
+
+The updater ZIP member is exactly the same file as the committed local fixture.
+The wrapped `aupd` entry is encrypted in-place; decrypting it with
+`tools/decrypt_aupd.py` yields native ARM updater code.
+
+```text
+aupd index=2 file_off=0x1553a00 len=0x851dc addr=0x10000000 entry=0x10000000 checksum=0x04835edd
+marker[0]=0xaabff224 key=0xe8d56465
+candidate[0] ... enabled=1 key=0xe8d56465 order=be score=2326 head=060000eafeffffea3f0000ea4b0000ea
+```
+
+`tools/inspect_flash_image.py` finds updater-managed flash image entries for
+`diskmode`, `diagmode`, and `logo`. Direct-running the decrypted updater is
+useful hardware evidence, but it is not the Apple Language-screen boot path:
+the updater enters its CFI flash programming loop and writes over the
+direct-loaded `0x10000000` image region. Current AUPD direct-run status:
+
+```text
+summary guest_insns=8547064 ticks=8547064 mmio_r=502080 mmio_w=369 lcd_words=0 disk_reads=0 irq=0 pc=0x10000d34
+dump32 addr=0x10000d20 0x00000000 0x00000000 0x00000000 0x00000000
+```
+
+The AUPD finding points toward better NOR/CFI flash mapping and bootloader
+recovery work, not toward seeding Apple sysinfo or drawing UI from the host.
+
 Firmware wrapper extraction with `tools/extract_firmware_image.py`:
 
 ```text
@@ -287,13 +324,35 @@ Byte-pattern checks against the extracted images:
 
 ```text
 apple-osos.bin: IsyS offset=5120, SysI offset=158556, booting! offset=4096, diskmode offset=6009, diskscan offset=6018, softupdt offset=6027, retailOS offset=6036
-apple-aupd.bin: IsyS/SysI/boot strings not found; first bytes disassemble as high-entropy/non-code data
+apple-aupd.bin: encrypted in wrapper; decrypted payload starts with ARM vectors and updater code
 apple-rsrc.bin: IsyS/SysI/boot strings not found
 ```
 
-So `aupd` is not an obvious native boot-metadata producer from these local
-artifacts. The real missing piece is still the boot ROM/bootloader path that
-sets the fast-RAM handoff table before `osos` executes.
+So `aupd` is now understood as native updater/flash evidence, not an obvious
+native Language-screen metadata producer. The real missing piece is still the
+boot ROM/bootloader path that sets the fast-RAM handoff table before `osos`
+executes.
+
+The probe disk's FAT partition does contain an `iPod_Control/Device/SysInfo`
+file, but this is not the early fast-RAM handoff table. It is absent from the
+pristine `ipodhd-apple-nano.img`, and direct `osos` execution fails before any
+disk read:
+
+```text
+python tools/inspect_fat32.py ..\artifacts\images\ipodhd-apple-nano-sysinfo-preferences-probe.img --partition 1 --offset 0x23f1a00 --list
+
+fat32 image=..\artifacts\images\ipodhd-apple-nano-sysinfo-preferences-probe.img partition=1 part_lba=67584 part_off=0x2100000 sectors=194560 bps=512 spc=1 reserved=32 fats=2 fatsz=2993 root_cluster=2 data_off=0x23f0400
+offset=0x23f1a00 path=iPod_Control/Device/SysInfo file_off=0x0 size=388 cluster=13
+file cluster=13 size=388 iPod_Control/Device/SysInfo
+file cluster=14 size=251 iPod_Control/Device/Preferences
+
+python tools/inspect_fat32.py ..\artifacts\images\ipodhd-apple-nano.img --partition 1 --offset 0x23f1a00
+
+offset=0x23f1a00 path=not-found
+```
+
+Loading this FAT file into fast RAM would be host-side sysinfo fabrication and
+is therefore not an acceptable Apple milestone path.
 
 Disk image inspection with `tools/inspect_disk_image.py`:
 

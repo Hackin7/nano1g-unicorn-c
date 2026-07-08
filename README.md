@@ -80,6 +80,18 @@ Useful options:
 - `--input "wheel-down,wait:250,select"`: accepted and logged; device injection
   is a later milestone.
 
+Useful audit tools:
+
+- `tools/inspect_boot_sources.py`: compare updater ZIP, wrapped firmware, and
+  disk firmware payloads while labeling boot/sysinfo-looking byte patterns by
+  source region.
+- `tools/inspect_fat32.py`: inspect the FAT32 data partition and map absolute
+  disk offsets back to file paths.
+- `tools/decrypt_aupd.py`: decrypt the wrapped Apple `aupd` payload using the
+  flash security block.
+- `tools/inspect_flash_image.py`: inspect/extract directory entries inside a
+  decrypted flash-style image.
+
 ## Current Status
 
 Implemented foundation:
@@ -95,6 +107,8 @@ Implemented foundation:
   and initializes CPU handoff registers.
 - Cache-control and memory-controller MMIO ranges are decoded through the
   central bus and preserve byte, halfword, and word register accesses.
+  Cache-control writes also flush Unicorn translation blocks so native guest
+  cache-maintenance operations can affect translated code.
 - Timer and interrupt-controller reads preserve byte, halfword, and word
   access semantics; a native ARM smoke covers timer expiry, interrupt status,
   timer-value acknowledge, and one-shot disable behavior.
