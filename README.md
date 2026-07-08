@@ -179,11 +179,12 @@ Implemented foundation:
   leaves the Apple `osos` fast-RAM handoff slot untouched. In verbose mode the
   same smoke now also logs the native AUPD Intel-style read-ID/read-array writes
   to low memory; with the normal direct low-zero SDRAM alias, those writes hit
-  `low0_map=1` rather than the modeled NOR device. Combining the same payload
-  with `--map-flash-zero` exposes the other side of that hardware question: the
-  updater also uses the low ARM SWI vector for diagnostics, while NOR flash
-  commands/readback occupy the same address range. With blank modeled flash at
-  zero, the first `svc 0x123456` vectors to `0x00000008` and fetches
+  `low0_map=1` rather than the modeled NOR device, and the immediate read-ID
+  readback sees SDRAM/vector bytes instead of Intel ID data. Combining the same
+  payload with `--map-flash-zero` exposes the other side of that hardware
+  question: the updater also uses the low ARM SWI vector for diagnostics, while
+  NOR flash commands/readback occupy the same address range. With blank modeled
+  flash at zero, the first `svc 0x123456` vectors to `0x00000008` and fetches
   `0xffffffff`; an MMIO trace and follow-up MMAP register dump show AUPD does
   not program MMAP or enable local vector remap before this diagnostic, so this
   path stops before any Apple UI code.

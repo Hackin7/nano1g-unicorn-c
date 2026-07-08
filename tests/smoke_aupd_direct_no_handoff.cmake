@@ -64,6 +64,11 @@ if(low0_read_id_pos EQUAL -1)
   message(FATAL_ERROR "AUPD direct run did not show the read-ID command hitting the low SDRAM alias:\n${output}")
 endif()
 
+string(FIND "${output}" "apple low0 read pc=0x10004794 addr=0x00000000 size=2 value=0x00000006 low0_map=1 flash_mode=0" low0_readback_pos)
+if(low0_readback_pos EQUAL -1)
+  message(FATAL_ERROR "AUPD direct run did not show read-ID readback coming from the low SDRAM alias:\n${output}")
+endif()
+
 string(FIND "${output}" "dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d" handoff_pos)
 if(handoff_pos EQUAL -1)
   message(FATAL_ERROR "AUPD direct run changed or failed to dump the Apple handoff slot:\n${output}")

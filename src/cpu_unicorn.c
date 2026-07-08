@@ -1007,6 +1007,54 @@ static const char *flash_command_name(uint32_t value) {
     }
 }
 
+static uint32_t low0_backing_read(n1g_state_t *s, uint32_t addr, int size) {
+    if (size <= 0 || size > 4 || addr >= N1G_FLASH_SIZE) {
+        return 0;
+    }
+    if (s->low0_map == N1G_LOW0_FLASH) {
+        return n1g_dev_flash_read(s, addr, (uint32_t)size);
+    }
+
+    uint32_t v = 0;
+    for (int i = 0; i < size && addr + (uint32_t)i < N1G_SDRAM_SIZE; i++) {
+        v |= ((uint32_t)s->ram.sdram[addr + (uint32_t)i]) << (8u * (uint32_t)i);
+    }
+    return v;
+}
+
+static void hook_mem_read(uc_engine *uc,
+                          uc_mem_type type,
+                          uint64_t address,
+                          int size,
+                          int64_t value,
+                          void *user_data) {
+    (void)type;
+    (void)value;
+    n1g_state_t *s = (n1g_state_t *)user_data;
+    if (s->opts.profile != N1G_PROFILE_APPLE) {
+        return;
+    }
+
+    static uint32_t low0_read_logs;
+    uint32_t addr = (uint32_t)address;
+    if (addr >= N1G_FLASH_SIZE || low0_read_logs >= 96u) {
+        return;
+    }
+
+    uint32_t pc = 0;
+    uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+    uint32_t read_value = low0_backing_read(s, addr, size);
+    low0_read_logs++;
+    n1g_log(s,
+            "apple low0 read pc=0x%08x addr=0x%08x size=%d value=0x%08x low0_map=%d flash_mode=%u",
+            pc,
+            addr,
+            size,
+            read_value,
+            (int)s->low0_map,
+            (unsigned)s->flash.mode);
+}
+
 static void hook_mem_write(uc_engine *uc,
                            uc_mem_type type,
                            uint64_t address,
@@ -1467,6 +1515,9 @@ bool n1g_cpu_init(n1g_state_t *s) {
                                 0x10700000u, 0x10800000u)) ||
              (s->opts.verbose &&
               !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,
+                                N1G_FLASH_BASE, N1G_FLASH_BASE + N1G_FLASH_SIZE - 1u)) ||
+             (s->opts.verbose &&
+              !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_READ, (void *)hook_mem_read,
                                 N1G_FLASH_BASE, N1G_FLASH_BASE + N1G_FLASH_SIZE - 1u)) ||
              (s->opts.verbose &&
               !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,

@@ -31,7 +31,7 @@ flash-command probe:
 ```text
 ctest --test-dir build-mingw --output-on-failure
 100% tests passed, 0 tests failed out of 25
-Total Test time (real) = 20.62 sec
+Total Test time (real) = 20.71 sec
 ```
 
 The Apple smoke test now asserts the no-HLE contract: no instruction shims, no
@@ -431,6 +431,7 @@ probe:
 ```text
 aupd parser pc=0x10001760 ... r0_words=0x46775570,0x0000001c,0x666c7368,0x00002000
 apple low0 write pc=0x10004790 addr=0x0000aaaa size=2 value=0x00009090 flash_cmd=read-id low0_map=1
+apple low0 read pc=0x10004794 addr=0x00000000 size=2 value=0x00000006 low0_map=1 flash_mode=0
 dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d ...
 ```
 
@@ -438,7 +439,8 @@ So direct AUPD execution is useful updater evidence, but it is not the native
 producer of the Apple `osos` fast-RAM handoff table. The low-memory write probe
 also shows a concrete hardware-semantic gap: with the direct-mode SDRAM alias at
 zero, AUPD's native Intel-style flash command sequence is not reaching the NOR
-model.
+model. The readback confirms it sees SDRAM/vector bytes (`0x0006`) instead of
+the modeled Intel manufacturer ID (`0x0089`).
 
 Adding `--map-flash-zero` keeps that RAM-loaded updater shape while exposing the
 modeled NOR device at address zero. The run reaches the native parser and real
