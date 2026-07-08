@@ -378,6 +378,24 @@ So `iPod_14.1.3.1.zip` is being inspected, but its firmware member is the same
 wrapped bundle as `apple_nano_14.5.3.1_fw.bin`; it is not the missing native
 boot ROM/bootloader producer for the `osos` handoff table.
 
+Recursive boot-ROM candidate scan with `tools/find_bootrom_candidates.py` over
+the updater ZIP plus local firmware/image fixture directories:
+
+```text
+zip=..\iPod_14.1.3.1.zip members=Firmware-14.5.3.1,manifest.plist
+file=..\iPod_14.1.3.1.zip:Firmware-14.5.3.1 kind=wrapped-firmware-bundle entries=osos,rsrc,aupd ...
+file=..\artifacts\firmware\apple_nano_14.5.3.1_fw.bin kind=wrapped-firmware-bundle entries=osos,rsrc,aupd ...
+file=..\artifacts\firmware\rockbox_nano_fw.bin kind=wrapped-firmware-bundle entries=osos ...
+file=..\artifacts\images\ipodhd-apple-nano.img kind=container-with-wrapped-firmware embedded_wrapped_starts=0x100000 ...
+file=..\artifacts\images\ipodhd-apple-nano-sysinfo-preferences-probe.img kind=container-with-wrapped-firmware embedded_wrapped_starts=0x100000 ...
+summary wrapped=22 containers=9 reset_candidates=0 other=3 skipped=0
+```
+
+The scan is intentionally conservative: if a future raw dump starts with an
+ARM-looking exception-vector table it will be reported as a reset-vector
+candidate for provenance review, but the current local fixtures produce zero
+such candidates.
+
 Payload-reference audit with `tools/inspect_payload_refs.py` on the extracted
 `../artifacts/analysis/apple_osos.bin` fixture:
 

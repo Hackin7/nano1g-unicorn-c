@@ -94,6 +94,9 @@ Useful audit tools:
   firmware, updater-style flash images, or raw reset-vector candidates without
   treating any of them as Apple boot ROMs by guesswork. Use
   `--zip-member all` to enumerate every updater ZIP member.
+- `tools/find_bootrom_candidates.py`: recursively scan fixture directories and
+  ZIP members for raw reset-vector candidates while reporting wrapped firmware
+  bundles and disk/container images separately.
 - `tools/inspect_aupd_batch.py`: scan files for the native AUPD updater's
   `FwUp` 28-byte command records and required `!dnE` end marker.
 - `tools/inspect_aupd_layout.py`: decode the decrypted AUPD reset relocation
@@ -249,8 +252,9 @@ Still expected before real Apple Language-screen parity:
   contains Apple wrapped firmware/disk images, patched experiments, screenshots,
   and analysis files, but no obvious stock boot ROM image; CTest runs
   `tools/audit_boot_sources.py` across the updater ZIP, firmware fixture,
-  bootloader fixture, and Apple disk images to keep that boot-source
-  classification checked;
+  bootloader fixture, and Apple disk images, and runs
+  `tools/find_bootrom_candidates.py` across the local firmware/image fixture
+  directories, to keep that boot-source classification checked;
 - complete IDE command sequencing;
 - broader PMU/RTC/input-device register behavior once native firmware probes
   more of those devices;

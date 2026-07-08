@@ -178,6 +178,11 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_PYTHON=${Python3_EXECUTABLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_boot_source_audit.cmake)
+    add_test(NAME smoke_bootrom_candidate_scan
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_bootrom_candidate_scan.cmake)
     add_test(NAME smoke_payload_refs
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
