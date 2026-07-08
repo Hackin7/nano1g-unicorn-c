@@ -247,6 +247,11 @@ Implemented foundation:
   and model word `0x02000000` at `+0xe0`. This is useful evidence for the data
   Apple expects, but it is not itself a boot path: current native execution does
   not yet load that file into RAM or publish `[0x4001ff18]` through guest code.
+- `smoke_native_sysinfo_handoff` proves the modeled hardware path can do that
+  publication without host-side HLE: a tiny native ARM probe reads the real FAT
+  `SysInfo` sector through ATA into fast RAM at `0x40018000`, then writes
+  `IsyS` and the pointer into `0x4001ff18`. This is a boot-stage capability
+  check, not an Apple Language-screen success condition.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
   that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
   Language-screen acceptance test yet.
