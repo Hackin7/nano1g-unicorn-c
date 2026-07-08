@@ -90,8 +90,10 @@ Useful audit tools:
   disk firmware payloads while labeling boot/sysinfo-looking byte patterns by
   source region.
 - `tools/audit_boot_sources.py`: classify local boot-source candidates as
-  wrapped firmware bundles, updater-style flash images, or raw reset-vector
-  candidates without treating any of them as Apple boot ROMs by guesswork.
+  wrapped firmware bundles, disk/container images with embedded wrapped
+  firmware, updater-style flash images, or raw reset-vector candidates without
+  treating any of them as Apple boot ROMs by guesswork. Use
+  `--zip-member all` to enumerate every updater ZIP member.
 - `tools/inspect_aupd_batch.py`: scan files for the native AUPD updater's
   `FwUp` 28-byte command records and required `!dnE` end marker.
 - `tools/inspect_aupd_layout.py`: decode the decrypted AUPD reset relocation
@@ -138,7 +140,8 @@ Implemented foundation:
   nonblack framebuffer without synthetic sysinfo handoff state.
 - Flash boot mode can load and map an external NOR/boot-ROM image at
   `0x00000000`. The current local fixtures do not include a stock Apple boot
-  ROM dump.
+  ROM dump; the Apple updater ZIP and HDD images contain wrapped firmware
+  partitions instead of reset-vector NOR bytes.
 - Direct boot can also source wrapped firmware from the disk image firmware
   partition, matching the local Apple/Rockbox media layout more closely.
 - ATA Identify Device and read-sector transfers now latch the guest-visible
@@ -245,7 +248,9 @@ Still expected before real Apple Language-screen parity:
 - native Apple boot ROM or flash dump. The current local artifact set still
   contains Apple wrapped firmware/disk images, patched experiments, screenshots,
   and analysis files, but no obvious stock boot ROM image; CTest runs
-  `tools/audit_boot_sources.py` to keep that boot-source classification checked;
+  `tools/audit_boot_sources.py` across the updater ZIP, firmware fixture,
+  bootloader fixture, and Apple disk images to keep that boot-source
+  classification checked;
 - complete IDE command sequencing;
 - broader PMU/RTC/input-device register behavior once native firmware probes
   more of those devices;

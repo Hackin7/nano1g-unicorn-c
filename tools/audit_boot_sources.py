@@ -135,7 +135,10 @@ def classify(label, data):
     else:
         starts = find_wrapped_starts(data)
         directory = find_flash_directory(data)
-        if directory is not None:
+        if starts:
+            kind = "container-with-wrapped-firmware"
+            reason = "contains embedded wrapped firmware partition(s), not reset-vector NOR bytes"
+        elif directory is not None:
             kind = "flash-update-image-candidate"
             names = ",".join(e[0] for e in flash_entries(data, directory))
             reason = "contains updater-style flash directory entries: %s" % (names or "none")
@@ -177,6 +180,14 @@ def inspect_path(path):
 
 def inspect_zip(path, member):
     with zipfile.ZipFile(path, "r") as zf:
+        names = zf.namelist()
+        print("zip=%s members=%s" % (path, ",".join(names)))
+        if member == "all":
+            for name in names:
+                classify("%s:%s" % (path, name), zf.read(name))
+            return
+        if member not in names:
+            raise SystemExit("zip member not found: %s" % member)
         data = zf.read(member)
     classify("%s:%s" % (path, member), data)
 

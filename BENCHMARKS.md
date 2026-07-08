@@ -280,6 +280,29 @@ summary guest_insns=456 ticks=456 mmio_r=55 mmio_w=48 lcd_words=0 disk_reads=0 i
 That is a hardware-ID correction only. The handoff table is still empty, and
 filling it from the host would violate `NO_HLE.md`.
 
+Current direct `osos` check with Unicorn virtual MMAP enabled reaches the same
+handoff blocker before any disk or LCD activity:
+
+```bash
+build-mingw\nano1g.exe \
+  --profile apple \
+  --firmware ..\artifacts\firmware\apple_nano_14.5.3.1_fw.bin \
+  --disk ..\artifacts\images\ipodhd-apple-nano-sysinfo-preferences-probe.img \
+  --virtual-memmap \
+  --max-insns 120000 \
+  --slice-insns 1 \
+  --dump32 0x4001ff18 \
+  --dump-count 4 \
+  --ppm tmp\apple-current-blocker.ppm
+```
+
+```text
+dump32 addr=0x4001ff18 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d 0x2d2d2d2d
+summary guest_insns=456 ticks=456 mmio_r=55 mmio_w=48 lcd_words=0 disk_reads=0 irq=0 pc=0x000013b4
+apple_ui_hits create_24c48=0 ... lang_loop_4ee20=0 ... lcd_dirty_53b18=0 ...
+apple_lcd_task_hits entry_53580=0 ... dirty_53b18=0 post_53b20=0 submit_53b38=0 wait_53db8=0 flush_53f28=0 ...
+```
+
 Loading the same Apple `osos` from the disk firmware partition gives the same
 honest blocker:
 
@@ -337,6 +360,23 @@ Apple firmware fixture as `wrapped-firmware-bundle` with `osos,rsrc,aupd`
 entries, and does not classify the Rockbox/iPodLinux `bootloader.bin` fixture as
 an Apple boot ROM. This keeps direct `osos` execution framed as a blocker probe,
 not a valid physical Apple boot.
+
+The stricter audit now enumerates every ZIP member and the Apple disk-image
+containers:
+
+```text
+zip=..\iPod_14.1.3.1.zip members=Firmware-14.5.3.1,manifest.plist
+file=..\iPod_14.1.3.1.zip:Firmware-14.5.3.1 ... kind=wrapped-firmware-bundle apple_boot_rom=no ... wrapped_entries=osos,rsrc,aupd
+file=..\iPod_14.1.3.1.zip:manifest.plist ... kind=raw-payload apple_boot_rom=no ...
+file=..\artifacts\firmware\apple_nano_14.5.3.1_fw.bin ... kind=wrapped-firmware-bundle apple_boot_rom=no ... wrapped_entries=osos,rsrc,aupd
+file=..\artifacts\firmware\bootloader.bin ... kind=raw-payload apple_boot_rom=no ... reset_vector_hits=1
+file=..\artifacts\images\ipodhd-apple-nano.img ... kind=container-with-wrapped-firmware apple_boot_rom=no ... embedded_wrapped_starts=0x100000
+file=..\artifacts\images\ipodhd-apple-nano-sysinfo-preferences-probe.img ... kind=container-with-wrapped-firmware apple_boot_rom=no ... embedded_wrapped_starts=0x100000
+```
+
+So `iPod_14.1.3.1.zip` is being inspected, but its firmware member is the same
+wrapped bundle as `apple_nano_14.5.3.1_fw.bin`; it is not the missing native
+boot ROM/bootloader producer for the `osos` handoff table.
 
 Payload-reference audit with `tools/inspect_payload_refs.py` on the extracted
 `../artifacts/analysis/apple_osos.bin` fixture:
