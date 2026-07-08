@@ -9,8 +9,8 @@ bool n1g_ram_init(n1g_state_t *s) {
     if (!s->ram.sdram || !s->ram.fastram) {
         return false;
     }
-    memset(s->ram.sdram, 0, N1G_SDRAM_SIZE);
-    memset(s->ram.fastram, 0, N1G_FASTRAM_SIZE);
+    memset(s->ram.sdram, 0x2d, N1G_SDRAM_SIZE);
+    memset(s->ram.fastram, 0x2d, N1G_FASTRAM_SIZE);
     return true;
 }
 
@@ -24,6 +24,12 @@ void n1g_ram_destroy(n1g_state_t *s) {
 uint8_t *n1g_ram_ptr(n1g_state_t *s, uint32_t addr, size_t size) {
     if (addr >= N1G_SDRAM_BASE && addr + size - 1 <= N1G_SDRAM_MIRROR_END) {
         uint32_t off = (addr - N1G_SDRAM_BASE) % N1G_SDRAM_SIZE;
+        if (off + size <= N1G_SDRAM_SIZE) {
+            return s->ram.sdram + off;
+        }
+    }
+    if (addr >= N1G_SDRAM_ALIAS_BASE && addr + size - 1 <= N1G_SDRAM_ALIAS_END) {
+        uint32_t off = (addr - N1G_SDRAM_ALIAS_BASE) % N1G_SDRAM_SIZE;
         if (off + size <= N1G_SDRAM_SIZE) {
             return s->ram.sdram + off;
         }

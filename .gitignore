@@ -1,11 +1,16 @@
 build/
+build-*/
+.deps/
+tmp/
 *.exe
 *.dll
 *.o
 *.obj
 *.ppm
+*.bmp
 *.log
-BENCHMARKS.md
+*_osos.bin
+*-osos.bin
 
 # Keep copyrighted/large fixtures outside this detached source repo.
 artifacts/

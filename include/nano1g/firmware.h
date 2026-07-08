@@ -8,5 +8,7 @@
 
 bool n1g_read_file(const char *path, uint8_t **out, size_t *out_size);
 bool n1g_load_firmware(n1g_state_t *s);
+bool n1g_load_firmware_from_disk(n1g_state_t *s);
+bool n1g_load_flash_rom(n1g_state_t *s);
 
 #endif

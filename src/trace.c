@@ -4,18 +4,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void n1g_log(n1g_state_t *s, const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
+static void n1g_vlog(n1g_state_t *s, const char *fmt, va_list ap) {
+    va_list copy;
+    va_copy(copy, ap);
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     if (s && s->trace) {
-        va_list ap2;
-        va_start(ap2, fmt);
-        vfprintf(s->trace, fmt, ap2);
+        vfprintf(s->trace, fmt, copy);
         fputc('\n', s->trace);
-        va_end(ap2);
     }
+    va_end(copy);
+}
+
+void n1g_log(n1g_state_t *s, const char *fmt, ...) {
+    if (s && !s->opts.verbose && !s->opts.trace_mmio && !s->opts.trace_pc && !s->trace) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    n1g_vlog(s, fmt, ap);
+    va_end(ap);
+}
+
+void n1g_info(n1g_state_t *s, const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    n1g_vlog(s, fmt, ap);
     va_end(ap);
 }
 

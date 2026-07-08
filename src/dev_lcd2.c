@@ -1,15 +1,38 @@
 #include "nano1g/devices.h"
 
+#include "nano1g/ram.h"
 #include "nano1g/trace.h"
 
 #include <stdio.h>
 
+#define LCD2_BLOCK_READY 0x04000000u
+#define LCD2_BLOCK_TXOK  0x01000000u
+#define LCD2_DATA_MASK   0x81000000u
+
 uint32_t n1g_dev_lcd2_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     (void)size;
+    if (offset == 0x00 || offset == 0x04) {
+        return s->lcd2.regs[0x20u / 4u] | LCD2_BLOCK_READY | LCD2_BLOCK_TXOK;
+    }
+    if (offset == 0x0c) {
+        return 0;
+    }
+    if (offset == 0x20) {
+        return s->lcd2.regs[offset / 4u] | LCD2_BLOCK_READY | LCD2_BLOCK_TXOK;
+    }
     if (offset < sizeof(s->lcd2.regs)) {
         return s->lcd2.regs[offset / 4u];
     }
     return 0;
+}
+
+static void lcd2_push_word(n1g_state_t *s, uint32_t value) {
+    uint32_t idx = s->lcd2.cursor++ % (N1G_LCD_W * N1G_LCD_H / 2u);
+    s->lcd2.pixels[idx * 2u] = (uint16_t)(value & 0xffffu);
+    s->lcd2.pixels[idx * 2u + 1u] = (uint16_t)(value >> 16);
+    s->lcd2.words++;
+    s->counters.lcd_words++;
+    s->lcd2.dirty = true;
 }
 
 void n1g_dev_lcd2_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value) {
@@ -18,12 +41,9 @@ void n1g_dev_lcd2_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
         s->lcd2.regs[offset / 4u] = value;
     }
     if (offset == 0x100) {
-        uint32_t idx = s->lcd2.cursor++ % (N1G_LCD_W * N1G_LCD_H / 2u);
-        s->lcd2.pixels[idx * 2u] = (uint16_t)(value & 0xffffu);
-        s->lcd2.pixels[idx * 2u + 1u] = (uint16_t)(value >> 16);
-        s->lcd2.words++;
-        s->counters.lcd_words++;
-        s->lcd2.dirty = true;
+        lcd2_push_word(s, value);
+    } else if (offset == 0x0c && (value & LCD2_DATA_MASK) == LCD2_DATA_MASK) {
+        lcd2_push_word(s, value);
     } else if (offset == 0x20) {
         if ((value & 0xff000000u) != 0) {
             s->lcd2.cursor = 0;
@@ -43,7 +63,7 @@ bool n1g_dev_lcd2_write_ppm(n1g_state_t *s, const char *path) {
     }
     FILE *f = fopen(path, "wb");
     if (!f) {
-        n1g_log(s, "failed to open ppm: %s", path);
+        n1g_info(s, "failed to open ppm: %s", path);
         return false;
     }
     fprintf(f, "P6\n%u %u\n255\n", N1G_LCD_W, N1G_LCD_H);
@@ -55,6 +75,6 @@ bool n1g_dev_lcd2_write_ppm(n1g_state_t *s, const char *path) {
         fputc((int)b, f);
     }
     fclose(f);
-    n1g_log(s, "wrote ppm %s lcd_words=%llu", path, (unsigned long long)s->lcd2.words);
+    n1g_info(s, "wrote ppm %s lcd_words=%llu", path, (unsigned long long)s->lcd2.words);
     return true;
 }

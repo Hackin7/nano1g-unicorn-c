@@ -11,5 +11,7 @@ void n1g_cpu_raise_irq(n1g_state_t *s, n1g_core_t core);
 uint32_t n1g_cpu_pc(n1g_state_t *s, n1g_core_t core);
 void n1g_cpu_set_reg(n1g_state_t *s, n1g_core_t core, int reg, uint32_t value);
 uint32_t n1g_cpu_get_reg(n1g_state_t *s, n1g_core_t core, int reg);
+void n1g_cpu_set_gpr(n1g_state_t *s, n1g_core_t core, unsigned reg, uint32_t value);
+uint32_t n1g_cpu_get_gpr(n1g_state_t *s, n1g_core_t core, unsigned reg);
 
 #endif
