@@ -3,7 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "nano1g/trace.h"
+
 #define OPTO_READY_BIT 0x04000000u
+#define OPTO_PENDING_BITS 0x0c000000u
 #define OPTO_PACKET_BASE 0x8000001au
 #define OPTO_WHEEL_ACTIVE 0x40000000u
 #define OPTO_HI_IRQ_BIT (1u << 8u)
@@ -37,24 +40,72 @@ static void set_last_input(n1g_state_t *s, const char *kind, const char *name) {
 }
 
 static void enqueue_status(n1g_state_t *s, uint32_t status) {
-    s->opto.regs[0x40u / 4u] = status;
-    s->opto.regs[0x04u / 4u] |= OPTO_READY_BIT;
+    if (s->opto.queue_len > 0u) {
+        uint8_t last = (uint8_t)((s->opto.queue_head + s->opto.queue_len - 1u) & 7u);
+        if (s->opto.queue[last] == status) {
+            return;
+        }
+    }
+    if (s->opto.queue_len >= 8u) {
+        s->opto.queue_head = (uint8_t)((s->opto.queue_head + 1u) & 7u);
+        s->opto.queue_len--;
+    }
+    s->opto.queue[(s->opto.queue_head + s->opto.queue_len) & 7u] = status;
+    s->opto.queue_len++;
     s->intc.hi_cpu_status |= OPTO_HI_IRQ_BIT;
     s->intc.hi_cop_status |= OPTO_HI_IRQ_BIT;
     s->opto.input_events++;
+    if (s->opts.verbose && s->opto.input_events <= 128u) {
+        n1g_log(s,
+                "apple opto enqueue status=0x%08x pending=%u hi_cpu=0x%08x hi_en=0x%08x",
+                status,
+                s->opto.queue_len,
+                s->intc.hi_cpu_status,
+                s->intc.hi_cpu_enable);
+    }
 }
 
 static void clear_status(n1g_state_t *s) {
-    s->opto.regs[0x40u / 4u] = 0;
-    s->opto.regs[0x04u / 4u] &= ~OPTO_READY_BIT;
-    s->intc.hi_cpu_status &= ~OPTO_HI_IRQ_BIT;
-    s->intc.hi_cop_status &= ~OPTO_HI_IRQ_BIT;
+    if (s->opto.queue_len > 0u) {
+        s->opto.queue_head = (uint8_t)((s->opto.queue_head + 1u) & 7u);
+        s->opto.queue_len--;
+    }
+    if (s->opto.queue_len == 0u) {
+        s->intc.hi_cpu_status &= ~OPTO_HI_IRQ_BIT;
+        s->intc.hi_cop_status &= ~OPTO_HI_IRQ_BIT;
+    } else {
+        s->intc.hi_cpu_status |= OPTO_HI_IRQ_BIT;
+        s->intc.hi_cop_status |= OPTO_HI_IRQ_BIT;
+    }
+    if (s->opts.verbose && s->opto.input_events <= 128u) {
+        n1g_log(s,
+                "apple opto clear pending=%u hi_cpu=0x%08x hi_en=0x%08x",
+                s->opto.queue_len,
+                s->intc.hi_cpu_status,
+                s->intc.hi_cpu_enable);
+    }
 }
 
 uint32_t n1g_dev_opto_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     uint32_t aligned = offset & ~3u;
     if (aligned < sizeof(s->opto.regs)) {
-        return read_part(s->opto.regs[aligned / 4u], offset, size);
+        uint32_t value = s->opto.regs[aligned / 4u];
+        if (aligned == 0x04u) {
+            value |= s->opto.queue_len ? OPTO_PENDING_BITS : 0u;
+        } else if (aligned == 0x40u) {
+            value = s->opto.queue_len
+                        ? s->opto.queue[s->opto.queue_head]
+                        : (OPTO_PACKET_BASE | s->opto.button_bits);
+        }
+        if (s->opts.verbose && (aligned == 0x04u || aligned == 0x40u) &&
+            s->opto.input_events <= 128u) {
+            n1g_log(s,
+                    "apple opto read offset=0x%02x value=0x%08x pending=%u",
+                    aligned,
+                    value,
+                    s->opto.queue_len);
+        }
+        return read_part(value, offset, size);
     }
     return 0;
 }
@@ -66,7 +117,7 @@ void n1g_dev_opto_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
         return;
     }
 
-    if (aligned == 0x40u && value == 0) {
+    if (aligned == 0x00u || aligned == 0x40u) {
         clear_status(s);
         return;
     }
@@ -91,6 +142,23 @@ bool n1g_dev_opto_button(n1g_state_t *s, const char *button, bool pressed) {
     return true;
 }
 
+bool n1g_dev_opto_tap(n1g_state_t *s, const char *button, uint64_t hold_ticks) {
+    uint32_t bit = button_bit(button);
+    if (bit == 0) {
+        return false;
+    }
+    if (s->opto.pending_release_bits != 0u) {
+        s->opto.button_bits &= ~s->opto.pending_release_bits;
+        enqueue_status(s, OPTO_PACKET_BASE | s->opto.button_bits);
+    }
+    s->opto.button_bits |= bit;
+    s->opto.pending_release_bits = bit;
+    s->opto.pending_release_tick = s->counters.device_ticks + hold_ticks;
+    set_last_input(s, "tap", button);
+    enqueue_status(s, OPTO_PACKET_BASE | s->opto.button_bits);
+    return true;
+}
+
 bool n1g_dev_opto_wheel(n1g_state_t *s, int delta) {
     int pos = (int)s->opto.wheel_pos + delta;
     while (pos < 0) {
@@ -104,4 +172,16 @@ bool n1g_dev_opto_wheel(n1g_state_t *s, int delta) {
                    ((uint32_t)s->opto.wheel_pos << 16u) |
                    s->opto.button_bits);
     return true;
+}
+
+void n1g_dev_opto_tick(n1g_state_t *s) {
+    if (s->opto.pending_release_bits == 0u ||
+        s->counters.device_ticks < s->opto.pending_release_tick) {
+        return;
+    }
+    s->opto.button_bits &= ~s->opto.pending_release_bits;
+    s->opto.pending_release_bits = 0;
+    s->opto.pending_release_tick = 0;
+    set_last_input(s, "up", "tap");
+    enqueue_status(s, OPTO_PACKET_BASE | s->opto.button_bits);
 }

@@ -34,5 +34,6 @@ void n1g_dev_cachecon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint
     }
     uint32_t *reg = &s->cachecon.regs[aligned / 4u];
     *reg = merge_write(*reg, offset, size, value);
-    n1g_cpu_flush_tb(s);
+    /* Deferred: flushing TBs inside an executing hook frees live blocks. */
+    s->tb_flush_pending = true;
 }

@@ -38,6 +38,9 @@ typedef struct n1g_opts {
     const char *disk_path;
     const char *ppm_path;
     const char *input_script;
+    uint32_t battery_percent;
+    bool main_charger_connected;
+    bool usb_charger_connected;
     n1g_profile_t profile;
     n1g_boot_mode_t boot_mode;
     uint64_t max_insns;
@@ -61,6 +64,8 @@ typedef struct n1g_opts {
     bool trace_pc;
     bool trace_mmio;
     bool verbose;
+    uint32_t probe_pc[16];
+    uint32_t probe_pc_count;
 } n1g_opts_t;
 
 typedef struct n1g_cpu {
@@ -98,10 +103,14 @@ typedef struct n1g_intc {
     uint32_t cop_status;
     uint32_t cpu_enable;
     uint32_t cop_enable;
+    uint32_t cpu_priority;
+    uint32_t cop_priority;
     uint32_t hi_cpu_status;
     uint32_t hi_cop_status;
     uint32_t hi_cpu_enable;
     uint32_t hi_cop_enable;
+    uint32_t hi_cpu_priority;
+    uint32_t hi_cop_priority;
 } n1g_intc_t;
 
 typedef struct n1g_mailbox {
@@ -139,7 +148,26 @@ typedef struct n1g_memcon {
 
 typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
+    /* Rockbox-style peripheral-paced channel engine (RAM -> IIS FIFO). */
+    struct {
+        uint32_t cur_addr;
+        uint32_t bytes_left;
+        bool active;
+        uint64_t starts;
+        uint64_t completions;
+        uint64_t bytes_pushed;
+    } ch[4];
 } n1g_dma_t;
+
+typedef struct n1g_i2s {
+    uint32_t config;
+    uint32_t clk;
+    uint32_t fifo_cfg;
+    uint32_t tx_fill;   /* used TX halfword slots, 0..N1G_I2S_TX_DEPTH */
+    uint32_t drain_acc; /* microsecond-scaled drain accumulator */
+    uint64_t tx_halfwords; /* total halfwords accepted (diagnostics) */
+    uint64_t tx_drained_halfwords;
+} n1g_i2s_t;
 
 typedef struct n1g_gpio {
     uint32_t regs[0xa00 / 4];
@@ -154,12 +182,18 @@ typedef struct n1g_i2c {
     uint8_t pcf_reg;
     uint8_t pcf_regs[0x40];
     uint64_t pcf_written;
+    uint64_t rtc_base_ticks;
     bool pcf_reg_set;
 } n1g_i2c_t;
 
 typedef struct n1g_opto {
     uint32_t regs[0x100 / 4];
+    uint32_t queue[8];
     uint32_t button_bits;
+    uint32_t pending_release_bits;
+    uint64_t pending_release_tick;
+    uint8_t queue_head;
+    uint8_t queue_len;
     uint8_t wheel_pos;
     uint64_t input_events;
     char last_input[32];
@@ -204,6 +238,22 @@ typedef struct n1g_ppcon {
     uint32_t regs[0x2000 / 4];
 } n1g_ppcon_t;
 
+#define N1G_INPUT_MAX_EVENTS 256u
+
+typedef struct n1g_input_event {
+    enum { N1G_INPUT_EV_WAIT, N1G_INPUT_EV_DOWN, N1G_INPUT_EV_UP, N1G_INPUT_EV_WHEEL } kind;
+    char name[8];
+    int32_t delta;
+    uint64_t ticks;
+} n1g_input_event_t;
+
+typedef struct n1g_input_script {
+    n1g_input_event_t events[N1G_INPUT_MAX_EVENTS];
+    size_t count;
+    size_t cursor;
+    uint64_t wait_left;
+} n1g_input_script_t;
+
 typedef struct n1g_counters {
     uint64_t guest_insns;
     uint64_t device_ticks;
@@ -219,6 +269,35 @@ typedef struct n1g_counters {
     uint32_t apple_lcd_path_last[12][6];
     uint64_t apple_lcd_producer_hits[12];
     uint32_t apple_lcd_producer_last[12][8];
+    uint64_t apple_input_hits[12];
+    uint32_t apple_input_last[12][8];
+    uint64_t apple_input_task_hits[16];
+    uint32_t apple_input_task_last[16][8];
+    uint64_t apple_key_gate_writes;
+    uint32_t apple_key_gate_last[8];
+    uint32_t apple_key_gate_bytes;
+    uint64_t apple_ui_ready_hits[8];
+    uint32_t apple_ui_ready_last[8][8];
+    uint32_t apple_ui_ready_bytes68;
+    uint32_t apple_ui_ready_bytes6c;
+    uint64_t apple_work_pool_hits[8];
+    uint32_t apple_work_pool_last[8][8];
+    uint32_t apple_work_pool_head;
+    uint32_t apple_work_pool_words[4];
+    uint64_t apple_ui_branch_hits[8];
+    uint32_t apple_ui_branch_last[8][8];
+    uint32_t apple_ui_branch_words[8][4];
+    uint64_t apple_ui_dispatch_hits[8];
+    uint32_t apple_ui_dispatch_last[8][8];
+    uint32_t apple_ui_dispatch_words[8][8];
+    uint32_t apple_handoff_pc;
+    uint32_t apple_handoff_slot;
+    uint32_t apple_handoff_tag;
+    uint32_t apple_handoff_sysinfo;
+    uint32_t apple_handoff_sysinfo_e0;
+    uint32_t apple_handoff_sysinfo_e4;
+    bool apple_handoff_seen;
+    bool apple_handoff_sysinfo_ram;
 } n1g_counters_t;
 
 typedef struct n1g_state {
@@ -237,6 +316,7 @@ typedef struct n1g_state {
     n1g_dma_t dma;
     n1g_gpio_t gpio;
     n1g_i2c_t i2c;
+    n1g_i2s_t i2s;
     n1g_opto_t opto;
     n1g_usb_t usb;
     n1g_lcd2_t lcd2;
@@ -248,6 +328,8 @@ typedef struct n1g_state {
     size_t mmio_context_count;
     n1g_low0_map_t low0_map;
     bool flash_alias_mapped;
+    bool tb_flush_pending;
+    n1g_input_script_t input_script_state;
 } n1g_state_t;
 
 #endif

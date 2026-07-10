@@ -44,6 +44,19 @@ static void mmio_write_cb(uc_engine *uc, uint64_t offset, unsigned size, uint64_
                 size * 8u, pc, (uint32_t)addr, (uint32_t)value);
     }
     n1g_bus_write_core(ctx->s, ctx->core, (uint32_t)addr, size, (uint32_t)value);
+    if (ctx->s->tb_flush_pending) {
+        /* Stop this core at the current instruction so the pending TB flush
+         * can run safely outside of emulation. Unicorn leaves PC at the MMIO
+         * instruction when uc_emu_stop() is called from the hook, so advance
+         * past this store or cache-maintenance writes repeat forever. */
+        uint32_t pc = 0;
+        uint32_t cpsr = 0;
+        uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+        uc_reg_read(uc, UC_ARM_REG_CPSR, &cpsr);
+        pc += (cpsr & 0x20u) ? 2u : 4u;
+        uc_reg_write(uc, UC_ARM_REG_PC, &pc);
+        uc_emu_stop(uc);
+    }
 }
 
 static bool tlb_access_from_type(uc_mem_type type, n1g_mmap_access_t *access, uc_prot *perms) {
@@ -265,6 +278,341 @@ static void record_apple_lcd_producer_probe(uc_engine *uc, n1g_state_t *s, uint3
     uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_lcd_producer_last[slot][7]);
 }
 
+static void record_apple_input_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_input_hits) / sizeof(s->counters.apple_input_hits[0])) {
+        return;
+    }
+
+    uint32_t r0 = 0;
+    uint32_t r1 = 0;
+    uint32_t r2 = 0;
+    uint32_t r3 = 0;
+    uint32_t r4 = 0;
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    uc_reg_read(uc, UC_ARM_REG_R0, &r0);
+    uc_reg_read(uc, UC_ARM_REG_R1, &r1);
+    uc_reg_read(uc, UC_ARM_REG_R2, &r2);
+    uc_reg_read(uc, UC_ARM_REG_R3, &r3);
+    uc_reg_read(uc, UC_ARM_REG_R4, &r4);
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_input_hits[slot]++;
+    s->counters.apple_input_last[slot][0] = r0;
+    s->counters.apple_input_last[slot][1] = r1;
+    s->counters.apple_input_last[slot][2] = r2;
+    s->counters.apple_input_last[slot][3] = r3;
+    s->counters.apple_input_last[slot][4] = r4;
+    s->counters.apple_input_last[slot][5] = sp;
+    s->counters.apple_input_last[slot][6] = lr;
+    s->counters.apple_input_last[slot][7] = 0;
+
+    switch (slot) {
+    case 0: /* opto ISR raw packet decode */
+        s->counters.apple_input_last[slot][7] = r0;
+        break;
+    case 1: /* opto ISR stored decoded state */
+        s->counters.apple_input_last[slot][5] = ram_read32_or_zero(s, 0x10706100u);
+        s->counters.apple_input_last[slot][6] = ram_read32_or_zero(s, 0x10706104u);
+        s->counters.apple_input_last[slot][7] = ram_read32_or_zero(s, 0x107060e4u);
+        break;
+    case 3: /* event queue post, descriptor in r0 on observed builds */
+        s->counters.apple_input_last[slot][5] = ram_read32_or_zero(s, r0);
+        s->counters.apple_input_last[slot][6] = ram_read32_or_zero(s, r0 + 0x1cu);
+        s->counters.apple_input_last[slot][7] = ram_read32_or_zero(s, r0 + 0x30u);
+        break;
+    case 4: { /* event queue receive, descriptor appears in caller stack */
+        uint32_t evt = ram_read32_or_zero(s, sp + 4u);
+        s->counters.apple_input_last[slot][5] = evt;
+        s->counters.apple_input_last[slot][6] = ram_read32_or_zero(s, evt + 0x1cu);
+        s->counters.apple_input_last[slot][7] = ram_read32_or_zero(s, evt + 0x30u);
+        break;
+    }
+    case 5:
+    case 6: { /* UI queue/language loop event pointer from stack */
+        uint32_t evt = ram_read32_or_zero(s, sp + 8u);
+        s->counters.apple_input_last[slot][5] = evt;
+        s->counters.apple_input_last[slot][6] = ram_read32_or_zero(s, evt + 0x1cu);
+        s->counters.apple_input_last[slot][7] = ram_read32_or_zero(s, evt + 0x30u);
+        break;
+    }
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+    case 11:
+        s->counters.apple_input_last[slot][5] = ram_read32_or_zero(s, r4 + 0x1cu);
+        s->counters.apple_input_last[slot][6] = ram_read32_or_zero(s, r4 + 0x28u);
+        s->counters.apple_input_last[slot][7] = ram_read32_or_zero(s, r4 + 0x30u);
+        break;
+    default:
+        break;
+    }
+}
+
+static void record_apple_input_task_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_input_task_hits) / sizeof(s->counters.apple_input_task_hits[0])) {
+        return;
+    }
+
+    uint32_t r0 = 0;
+    uint32_t r1 = 0;
+    uint32_t r2 = 0;
+    uint32_t r3 = 0;
+    uint32_t r4 = 0;
+    uint32_t r7 = 0;
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    uc_reg_read(uc, UC_ARM_REG_R0, &r0);
+    uc_reg_read(uc, UC_ARM_REG_R1, &r1);
+    uc_reg_read(uc, UC_ARM_REG_R2, &r2);
+    uc_reg_read(uc, UC_ARM_REG_R3, &r3);
+    uc_reg_read(uc, UC_ARM_REG_R4, &r4);
+    uc_reg_read(uc, UC_ARM_REG_R7, &r7);
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_input_task_hits[slot]++;
+    s->counters.apple_input_task_last[slot][0] = r0;
+    s->counters.apple_input_task_last[slot][1] = r1;
+    s->counters.apple_input_task_last[slot][2] = r2;
+    s->counters.apple_input_task_last[slot][3] = r3;
+    s->counters.apple_input_task_last[slot][4] = r4;
+    s->counters.apple_input_task_last[slot][5] = r7;
+    s->counters.apple_input_task_last[slot][6] = sp;
+    s->counters.apple_input_task_last[slot][7] = lr;
+
+    switch (slot) {
+    case 9:
+    case 13:
+    case 14:
+        s->counters.apple_input_task_last[slot][5] = ram_read32_or_zero(s, r0);
+        s->counters.apple_input_task_last[slot][6] = ram_read32_or_zero(s, r1);
+        s->counters.apple_input_task_last[slot][7] = ram_read32_or_zero(s, r1 + 4u);
+        break;
+    case 10:
+    case 11:
+    case 12:
+        s->counters.apple_input_task_last[slot][5] = ram_read32_or_zero(s, r7);
+        s->counters.apple_input_task_last[slot][6] = ram_read32_or_zero(s, r7 + 0x10u);
+        s->counters.apple_input_task_last[slot][7] = ram_read32_or_zero(s, r7 + 0x14u);
+        break;
+    case 15: {
+        uint32_t evt = ram_read32_or_zero(s, sp + 0x1cu);
+        s->counters.apple_input_task_last[slot][5] = evt;
+        s->counters.apple_input_task_last[slot][6] = ram_read32_or_zero(s, evt + 0x1cu);
+        s->counters.apple_input_task_last[slot][7] = ram_read32_or_zero(s, evt + 0x30u);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+static void record_apple_ui_ready_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_ui_ready_hits) / sizeof(s->counters.apple_ui_ready_hits[0])) {
+        return;
+    }
+
+    uint32_t r[6] = {0};
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_ui_ready_hits[slot]++;
+    s->counters.apple_ui_ready_last[slot][0] = r[0];
+    s->counters.apple_ui_ready_last[slot][1] = r[1];
+    s->counters.apple_ui_ready_last[slot][2] = r[2];
+    s->counters.apple_ui_ready_last[slot][3] = r[3];
+    s->counters.apple_ui_ready_last[slot][4] = r[4];
+    s->counters.apple_ui_ready_last[slot][5] = r[5];
+    s->counters.apple_ui_ready_last[slot][6] = sp;
+    s->counters.apple_ui_ready_last[slot][7] = lr;
+    s->counters.apple_ui_ready_bytes68 = ram_read32_or_zero(s, 0x10705468u);
+    s->counters.apple_ui_ready_bytes6c = ram_read32_or_zero(s, 0x1070546cu);
+
+    if (s->counters.apple_ui_ready_hits[slot] <= 16u) {
+        n1g_log(s,
+                "apple ui-ready probe slot=%u hit=%llu pc_slot r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x r5=0x%08x sp=0x%08x lr=0x%08x bytes68=0x%08x bytes6c=0x%08x",
+                slot,
+                (unsigned long long)s->counters.apple_ui_ready_hits[slot],
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                sp,
+                lr,
+                s->counters.apple_ui_ready_bytes68,
+                s->counters.apple_ui_ready_bytes6c);
+    }
+}
+
+static void record_apple_work_pool_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_work_pool_hits) / sizeof(s->counters.apple_work_pool_hits[0])) {
+        return;
+    }
+
+    uint32_t r[6] = {0};
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_work_pool_hits[slot]++;
+    s->counters.apple_work_pool_last[slot][0] = r[0];
+    s->counters.apple_work_pool_last[slot][1] = r[1];
+    s->counters.apple_work_pool_last[slot][2] = r[2];
+    s->counters.apple_work_pool_last[slot][3] = r[3];
+    s->counters.apple_work_pool_last[slot][4] = r[4];
+    s->counters.apple_work_pool_last[slot][5] = r[5];
+    s->counters.apple_work_pool_last[slot][6] = sp;
+    s->counters.apple_work_pool_last[slot][7] = lr;
+    s->counters.apple_work_pool_head = ram_read32_or_zero(s, 0x107059d0u);
+    for (uint32_t i = 0; i < 4u; i++) {
+        s->counters.apple_work_pool_words[i] = ram_read32_or_zero(s, 0x107059d0u + i * 4u);
+    }
+
+    if (s->counters.apple_work_pool_hits[slot] <= 32u) {
+        n1g_log(s,
+                "apple work-pool probe slot=%u hit=%llu r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x r5=0x%08x sp=0x%08x lr=0x%08x pool=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x",
+                slot,
+                (unsigned long long)s->counters.apple_work_pool_hits[slot],
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                sp,
+                lr,
+                s->counters.apple_work_pool_head,
+                s->counters.apple_work_pool_words[0],
+                s->counters.apple_work_pool_words[1],
+                s->counters.apple_work_pool_words[2],
+                s->counters.apple_work_pool_words[3]);
+    }
+}
+
+static void record_apple_ui_branch_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_ui_branch_hits) / sizeof(s->counters.apple_ui_branch_hits[0])) {
+        return;
+    }
+
+    uint32_t r[6] = {0};
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_ui_branch_hits[slot]++;
+    s->counters.apple_ui_branch_last[slot][0] = r[0];
+    s->counters.apple_ui_branch_last[slot][1] = r[1];
+    s->counters.apple_ui_branch_last[slot][2] = r[2];
+    s->counters.apple_ui_branch_last[slot][3] = r[3];
+    s->counters.apple_ui_branch_last[slot][4] = r[4];
+    s->counters.apple_ui_branch_last[slot][5] = r[5];
+    s->counters.apple_ui_branch_last[slot][6] = sp;
+    s->counters.apple_ui_branch_last[slot][7] = lr;
+
+    uint32_t base = slot >= 3u ? r[4] : r[0];
+    s->counters.apple_ui_branch_words[slot][0] = ram_read32_or_zero(s, base);
+    s->counters.apple_ui_branch_words[slot][1] = ram_read32_or_zero(s, base + 4u);
+    s->counters.apple_ui_branch_words[slot][2] = ram_read32_or_zero(s, base + 8u);
+    s->counters.apple_ui_branch_words[slot][3] = ram_read32_or_zero(s, base + 0x1cu);
+
+    if (s->counters.apple_ui_branch_hits[slot] <= 32u) {
+        n1g_log(s,
+                "apple ui-branch probe slot=%u hit=%llu r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x r5=0x%08x sp=0x%08x lr=0x%08x base=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x",
+                slot,
+                (unsigned long long)s->counters.apple_ui_branch_hits[slot],
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                sp,
+                lr,
+                base,
+                s->counters.apple_ui_branch_words[slot][0],
+                s->counters.apple_ui_branch_words[slot][1],
+                s->counters.apple_ui_branch_words[slot][2],
+                s->counters.apple_ui_branch_words[slot][3]);
+    }
+}
+
+static void record_apple_ui_dispatch_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_ui_dispatch_hits) / sizeof(s->counters.apple_ui_dispatch_hits[0])) {
+        return;
+    }
+
+    uint32_t r[6] = {0};
+    uint32_t sp = 0;
+    uint32_t lr = 0;
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, arm_regs[i], &r[i]);
+    }
+    uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+
+    s->counters.apple_ui_dispatch_hits[slot]++;
+    s->counters.apple_ui_dispatch_last[slot][0] = r[0];
+    s->counters.apple_ui_dispatch_last[slot][1] = r[1];
+    s->counters.apple_ui_dispatch_last[slot][2] = r[2];
+    s->counters.apple_ui_dispatch_last[slot][3] = r[3];
+    s->counters.apple_ui_dispatch_last[slot][4] = r[4];
+    s->counters.apple_ui_dispatch_last[slot][5] = r[5];
+    s->counters.apple_ui_dispatch_last[slot][6] = sp;
+    s->counters.apple_ui_dispatch_last[slot][7] = lr;
+
+    uint32_t obj = slot >= 4u ? r[4] : r[0];
+    uint32_t vtable = ram_read32_or_zero(s, obj);
+    s->counters.apple_ui_dispatch_words[slot][0] = vtable;
+    s->counters.apple_ui_dispatch_words[slot][1] = ram_read32_or_zero(s, obj + 4u);
+    s->counters.apple_ui_dispatch_words[slot][2] = ram_read32_or_zero(s, obj + 8u);
+    s->counters.apple_ui_dispatch_words[slot][3] = ram_read32_or_zero(s, obj + 0x1cu);
+    s->counters.apple_ui_dispatch_words[slot][4] = ram_read32_or_zero(s, vtable);
+    s->counters.apple_ui_dispatch_words[slot][5] = ram_read32_or_zero(s, vtable + 4u);
+    s->counters.apple_ui_dispatch_words[slot][6] = ram_read32_or_zero(s, vtable + 0xbcu);
+    s->counters.apple_ui_dispatch_words[slot][7] = ram_read32_or_zero(s, vtable + 0x140u);
+
+    if (s->counters.apple_ui_dispatch_hits[slot] <= 32u) {
+        n1g_log(s,
+                "apple ui-dispatch probe slot=%u hit=%llu r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r4=0x%08x r5=0x%08x sp=0x%08x lr=0x%08x objw=0x%08x,0x%08x,0x%08x,0x%08x vt=0x%08x,0x%08x,0x%08x,0x%08x",
+                slot,
+                (unsigned long long)s->counters.apple_ui_dispatch_hits[slot],
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                r[5],
+                sp,
+                lr,
+                s->counters.apple_ui_dispatch_words[slot][0],
+                s->counters.apple_ui_dispatch_words[slot][1],
+                s->counters.apple_ui_dispatch_words[slot][2],
+                s->counters.apple_ui_dispatch_words[slot][3],
+                s->counters.apple_ui_dispatch_words[slot][4],
+                s->counters.apple_ui_dispatch_words[slot][5],
+                s->counters.apple_ui_dispatch_words[slot][6],
+                s->counters.apple_ui_dispatch_words[slot][7]);
+    }
+}
+
 static void format_guest_bytes(uc_engine *uc, uint32_t addr, char *hex, size_t hex_size, char *ascii, size_t ascii_size) {
     uint8_t bytes[32];
     memset(bytes, 0, sizeof(bytes));
@@ -354,6 +702,10 @@ static void log_apple_handoff_probe(uc_engine *uc, n1g_state_t *s, uint64_t addr
         uint32_t pp_ver = n1g_dev_ppcon_read(s, 0, 4);
         uint32_t pp_selector = (pp_ver >> 16) & 0xffu;
         uint32_t cpuid = core == N1G_CORE_COP ? 0xaaaaaaaau : 0x55555555u;
+        s->counters.apple_handoff_pc = (uint32_t)address;
+        s->counters.apple_handoff_slot =
+            (pp_selector == 0x32u || pp_selector == 0x36u) ? 0x4001ff18u : 0x40017f18u;
+        s->counters.apple_handoff_seen = true;
         n1g_log(s,
                 "apple handoff entry pc=0x%08llx core=%d cpuid=0x%08x ppver=0x%08x pp_selector=0x%02x expected_slot=%s",
                 (unsigned long long)address,
@@ -361,7 +713,7 @@ static void log_apple_handoff_probe(uc_engine *uc, n1g_state_t *s, uint64_t addr
                 cpuid,
                 pp_ver,
                 pp_selector,
-                (pp_selector == 0x32u || pp_selector == 0x36u) ? "0x4001ff18" : "0x40017f18");
+                s->counters.apple_handoff_slot == 0x4001ff18u ? "0x4001ff18" : "0x40017f18");
         return;
     }
 
@@ -375,6 +727,14 @@ static void log_apple_handoff_probe(uc_engine *uc, n1g_state_t *s, uint64_t addr
     uint32_t sysinfo_e4 = 0;
     bool sysinfo_e0_ok = n1g_ram_read(s, sysinfo + 0xe0u, 4, &sysinfo_e0);
     bool sysinfo_e4_ok = n1g_ram_read(s, sysinfo + 0xe4u, 4, &sysinfo_e4);
+    s->counters.apple_handoff_pc = (uint32_t)address;
+    s->counters.apple_handoff_slot = handoff;
+    s->counters.apple_handoff_tag = handoff_tag;
+    s->counters.apple_handoff_sysinfo = sysinfo;
+    s->counters.apple_handoff_sysinfo_e0 = sysinfo_e0;
+    s->counters.apple_handoff_sysinfo_e4 = sysinfo_e4;
+    s->counters.apple_handoff_seen = true;
+    s->counters.apple_handoff_sysinfo_ram = sysinfo_e0_ok || sysinfo_e4_ok;
 
     n1g_log(s,
             "apple handoff probe pc=0x%08llx handoff=0x%08x tag=0x%08x sysinfo=0x%08x sysinfo_ram=%s sysinfo_e0=0x%08x sysinfo_e4=0x%08x r0=0x%08x r4=0x%08x lr=0x%08x sp=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x",
@@ -609,6 +969,169 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
         break;
     case 0x00054210u:
         record_apple_lcd_producer_probe(uc, s, 10);
+        break;
+    case 0x001c6538u:
+        record_apple_input_probe(uc, s, 0);
+        break;
+    case 0x001c6574u:
+        record_apple_input_probe(uc, s, 1);
+        break;
+    case 0x0002a058u:
+        record_apple_input_probe(uc, s, 2);
+        break;
+    case 0x000b3468u:
+        record_apple_input_probe(uc, s, 3);
+        break;
+    case 0x000b3508u:
+        record_apple_input_probe(uc, s, 4);
+        break;
+    case 0x000d0bb4u:
+        record_apple_input_probe(uc, s, 5);
+        break;
+    case 0x0004ee20u:
+        record_apple_input_probe(uc, s, 6);
+        break;
+    case 0x0004ee44u:
+        record_apple_input_probe(uc, s, 7);
+        record_apple_ui_branch_probe(uc, s, 7);
+        break;
+    case 0x0004ee58u:
+        record_apple_input_probe(uc, s, 8);
+        break;
+    case 0x0004eec8u:
+        record_apple_input_probe(uc, s, 9);
+        record_apple_ui_branch_probe(uc, s, 6);
+        break;
+    case 0x00024db4u:
+        record_apple_input_probe(uc, s, 10);
+        record_apple_ui_branch_probe(uc, s, 3);
+        break;
+    case 0x0004eeb4u:
+        record_apple_input_probe(uc, s, 11);
+        break;
+    case 0x000483b8u:
+        record_apple_ui_ready_probe(uc, s, 0);
+        break;
+    case 0x0004a404u:
+        record_apple_ui_ready_probe(uc, s, 1);
+        break;
+    case 0x0004a410u:
+        record_apple_ui_ready_probe(uc, s, 2);
+        break;
+    case 0x0004a41cu:
+        record_apple_ui_ready_probe(uc, s, 3);
+        break;
+    case 0x0004a420u:
+        record_apple_ui_ready_probe(uc, s, 4);
+        break;
+    case 0x001caa50u:
+        record_apple_input_task_probe(uc, s, 0);
+        break;
+    case 0x001caa7cu:
+        record_apple_input_task_probe(uc, s, 1);
+        break;
+    case 0x001caa84u:
+        record_apple_input_task_probe(uc, s, 2);
+        break;
+    case 0x0002fd0cu:
+        record_apple_input_task_probe(uc, s, 3);
+        break;
+    case 0x0002fd60u:
+        record_apple_input_task_probe(uc, s, 4);
+        break;
+    case 0x0002fd70u:
+        record_apple_input_task_probe(uc, s, 5);
+        break;
+    case 0x0002fd84u:
+        record_apple_input_task_probe(uc, s, 6);
+        break;
+    case 0x0002fd9cu:
+        record_apple_input_task_probe(uc, s, 7);
+        break;
+    case 0x0002fda8u:
+        record_apple_input_task_probe(uc, s, 8);
+        break;
+    case 0x000b32b8u:
+        record_apple_input_task_probe(uc, s, 9);
+        break;
+    case 0x000b32e4u:
+        record_apple_input_task_probe(uc, s, 10);
+        break;
+    case 0x000b32ecu:
+        record_apple_input_task_probe(uc, s, 11);
+        break;
+    case 0x000b330cu:
+        record_apple_input_task_probe(uc, s, 12);
+        break;
+    case 0x000b310cu:
+        record_apple_work_pool_probe(uc, s, 0);
+        break;
+    case 0x000835b4u:
+        record_apple_work_pool_probe(uc, s, 1);
+        break;
+    case 0x000d0c54u:
+        record_apple_work_pool_probe(uc, s, 2);
+        break;
+    case 0x00048060u:
+        record_apple_input_task_probe(uc, s, 13);
+        break;
+    case 0x00032840u:
+        record_apple_input_task_probe(uc, s, 14);
+        break;
+    case 0x000d0c58u:
+        record_apple_work_pool_probe(uc, s, 3);
+        record_apple_input_task_probe(uc, s, 15);
+        break;
+    case 0x000d0c5cu:
+        record_apple_work_pool_probe(uc, s, 4);
+        break;
+    case 0x000d0c68u:
+        record_apple_work_pool_probe(uc, s, 5);
+        break;
+    case 0x000d0c78u:
+        record_apple_work_pool_probe(uc, s, 6);
+        break;
+    case 0x000d0c90u:
+        record_apple_work_pool_probe(uc, s, 7);
+        break;
+    case 0x0004ec94u:
+        record_apple_ui_branch_probe(uc, s, 0);
+        break;
+    case 0x0004eca0u:
+        record_apple_ui_branch_probe(uc, s, 1);
+        break;
+    case 0x00025398u:
+        record_apple_ui_branch_probe(uc, s, 2);
+        break;
+    case 0x0002539cu:
+        record_apple_ui_dispatch_probe(uc, s, 0);
+        break;
+    case 0x000253a0u:
+        record_apple_ui_dispatch_probe(uc, s, 1);
+        break;
+    case 0x000253a4u:
+        record_apple_ui_dispatch_probe(uc, s, 2);
+        break;
+    case 0x0002a8b0u:
+        record_apple_ui_dispatch_probe(uc, s, 3);
+        break;
+    case 0x0002a8d4u:
+        record_apple_ui_dispatch_probe(uc, s, 4);
+        break;
+    case 0x0002a8ecu:
+        record_apple_ui_dispatch_probe(uc, s, 5);
+        break;
+    case 0x0002a91cu:
+        record_apple_ui_dispatch_probe(uc, s, 6);
+        break;
+    case 0x0002a944u:
+        record_apple_ui_dispatch_probe(uc, s, 7);
+        break;
+    case 0x00024e20u:
+        record_apple_ui_branch_probe(uc, s, 4);
+        break;
+    case 0x00024f08u:
+        record_apple_ui_branch_probe(uc, s, 5);
         break;
     default:
         break;
@@ -1072,6 +1595,53 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
             ram_read32_or_zero(s, r4 + 4u),
             ptr8,
             ram_read32_or_zero(s, ptr8));
+}
+
+static void hook_apple_key_gate_write(uc_engine *uc,
+                                      uc_mem_type type,
+                                      uint64_t address,
+                                      int size,
+                                      int64_t value,
+                                      void *user_data) {
+    (void)type;
+    n1g_state_t *s = (n1g_state_t *)user_data;
+    if (s->opts.profile != N1G_PROFILE_APPLE) {
+        return;
+    }
+
+    uint32_t pc = 0;
+    uint32_t lr = 0;
+    uint32_t r0 = 0;
+    uint32_t r1 = 0;
+    uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+    uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+    uc_reg_read(uc, UC_ARM_REG_R0, &r0);
+    uc_reg_read(uc, UC_ARM_REG_R1, &r1);
+
+    s->counters.apple_key_gate_writes++;
+    s->counters.apple_key_gate_last[0] = pc;
+    s->counters.apple_key_gate_last[1] = (uint32_t)address;
+    s->counters.apple_key_gate_last[2] = (uint32_t)size;
+    s->counters.apple_key_gate_last[3] = (uint32_t)value;
+    s->counters.apple_key_gate_last[4] = r0;
+    s->counters.apple_key_gate_last[5] = r1;
+    s->counters.apple_key_gate_last[6] = lr;
+    s->counters.apple_key_gate_last[7] = ram_read32_or_zero(s, 0x10705468u);
+    s->counters.apple_key_gate_bytes = ram_read32_or_zero(s, 0x1070546cu);
+    if (s->counters.apple_key_gate_writes <= 32u) {
+        n1g_info(s,
+                 "apple key-gate write #%llu pc=0x%08x addr=0x%08x size=%d value=0x%08x r0=0x%08x r1=0x%08x lr=0x%08x pre68=0x%08x pre6c=0x%08x",
+                 (unsigned long long)s->counters.apple_key_gate_writes,
+                 pc,
+                 (uint32_t)address,
+                 size,
+                 (uint32_t)value,
+                 r0,
+                 r1,
+                 lr,
+                 s->counters.apple_key_gate_last[7],
+                 s->counters.apple_key_gate_bytes);
+    }
 }
 
 static bool hook_mem_invalid(uc_engine *uc,
@@ -1558,20 +2128,74 @@ static bool add_code_hook(n1g_state_t *s, uc_engine *uc, uint32_t begin, uint32_
     return add_hook_checked(s, uc, UC_HOOK_CODE, (void *)hook_code, begin, end);
 }
 
+/* Generic --probe-pc hook: log registers whenever execution reaches a
+ * requested address. Profile-independent debugging aid. */
+static void hook_probe_pc(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
+    (void)size;
+    n1g_state_t *s = (n1g_state_t *)user_data;
+    uint32_t r[6] = {0};
+    static const int regs[6] = {UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
+                                UC_ARM_REG_R3, UC_ARM_REG_LR, UC_ARM_REG_SP};
+    for (int i = 0; i < 6; i++) {
+        uc_reg_read(uc, regs[i], &r[i]);
+    }
+    n1g_info(s,
+             "probe pc=0x%08x r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x lr=0x%08x sp=0x%08x ticks=%llu",
+             (uint32_t)address,
+             r[0], r[1], r[2], r[3], r[4], r[5],
+             (unsigned long long)s->counters.device_ticks);
+}
+
+static bool add_probe_pc_hooks(n1g_state_t *s, uc_engine *uc) {
+    for (uint32_t i = 0; i < s->opts.probe_pc_count; i++) {
+        if (!add_hook_checked(s, uc, UC_HOOK_CODE, (void *)hook_probe_pc,
+                              s->opts.probe_pc[i], s->opts.probe_pc[i] + 3u)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool add_apple_progress_hooks(n1g_state_t *s, uc_engine *uc) {
-    return add_code_hook(s, uc, 0x0000c9a4u, 0x0000c9a8u) &&
+    return add_code_hook(s, uc, 0x00001388u, 0x000013b8u) &&
+           add_code_hook(s, uc, 0x0000c9a4u, 0x0000c9a8u) &&
            add_code_hook(s, uc, 0x0000c9f4u, 0x0000c9f8u) &&
            add_code_hook(s, uc, 0x00024c48u, 0x00024c4cu) &&
            add_code_hook(s, uc, 0x00025024u, 0x00025028u) &&
+           add_code_hook(s, uc, 0x00025398u, 0x000253a8u) &&
+           add_code_hook(s, uc, 0x0002a8b0u, 0x0002a948u) &&
            add_code_hook(s, uc, 0x00032840u, 0x00032844u) &&
+           add_code_hook(s, uc, 0x0002a058u, 0x0002a05cu) &&
+           add_code_hook(s, uc, 0x0002fd0cu, 0x0002fd10u) &&
+           add_code_hook(s, uc, 0x0002fd60u, 0x0002fd64u) &&
+           add_code_hook(s, uc, 0x0002fd70u, 0x0002fd74u) &&
+           add_code_hook(s, uc, 0x0002fd84u, 0x0002fd88u) &&
+           add_code_hook(s, uc, 0x0002fd9cu, 0x0002fda0u) &&
+           add_code_hook(s, uc, 0x0002fda8u, 0x0002fdacu) &&
+           add_code_hook(s, uc, 0x000835b4u, 0x000835b8u) &&
+           add_code_hook(s, uc, 0x000b310cu, 0x000b3110u) &&
+           add_code_hook(s, uc, 0x000b32b8u, 0x000b32bcu) &&
+           add_code_hook(s, uc, 0x000b32e4u, 0x000b32f0u) &&
+           add_code_hook(s, uc, 0x000b330cu, 0x000b3310u) &&
+           add_code_hook(s, uc, 0x000b3468u, 0x000b346cu) &&
+           add_code_hook(s, uc, 0x000b3508u, 0x000b350cu) &&
            add_code_hook(s, uc, 0x00048060u, 0x00048064u) &&
+           add_code_hook(s, uc, 0x000483b8u, 0x000483bcu) &&
            add_code_hook(s, uc, 0x00048098u, 0x0004809cu) &&
            add_code_hook(s, uc, 0x000480acu, 0x000480b0u) &&
+           add_code_hook(s, uc, 0x0004a404u, 0x0004a424u) &&
            add_code_hook(s, uc, 0x00045dfcu, 0x00045e00u) &&
            add_code_hook(s, uc, 0x00045e6cu, 0x00045e70u) &&
            add_code_hook(s, uc, 0x0004b74cu, 0x0004b750u) &&
+           add_code_hook(s, uc, 0x0004ec94u, 0x0004eca4u) &&
            add_code_hook(s, uc, 0x0004ee20u, 0x0004ee24u) &&
+           add_code_hook(s, uc, 0x0004ee44u, 0x0004ee48u) &&
+           add_code_hook(s, uc, 0x0004ee58u, 0x0004ee5cu) &&
            add_code_hook(s, uc, 0x0004eeb4u, 0x0004eeb8u) &&
+           add_code_hook(s, uc, 0x0004eec8u, 0x0004eeccu) &&
+           add_code_hook(s, uc, 0x00024db4u, 0x00024db8u) &&
+           add_code_hook(s, uc, 0x00024e20u, 0x00024e24u) &&
+           add_code_hook(s, uc, 0x00024f08u, 0x00024f0cu) &&
            add_code_hook(s, uc, 0x000540a0u, 0x00054214u) &&
            add_code_hook(s, uc, 0x00025274u, 0x00025278u) &&
            add_code_hook(s, uc, 0x000255a4u, 0x000255b8u) &&
@@ -1579,10 +2203,19 @@ static bool add_apple_progress_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00053b20u, 0x00053b3cu) &&
            add_code_hook(s, uc, 0x000d0bb4u, 0x000d0bb8u) &&
            add_code_hook(s, uc, 0x000d0c54u, 0x000d0c58u) &&
+           add_code_hook(s, uc, 0x000d0c58u, 0x000d0c5cu) &&
+           add_code_hook(s, uc, 0x000d0c5cu, 0x000d0c60u) &&
+           add_code_hook(s, uc, 0x000d0c68u, 0x000d0c6cu) &&
+           add_code_hook(s, uc, 0x000d0c78u, 0x000d0c7cu) &&
+           add_code_hook(s, uc, 0x000d0c90u, 0x000d0c94u) &&
            add_code_hook(s, uc, 0x0017d260u, 0x0017d264u) &&
            add_code_hook(s, uc, 0x001c5188u, 0x001c518cu) &&
            add_code_hook(s, uc, 0x001c5808u, 0x001c580cu) &&
-           add_code_hook(s, uc, 0x001c6078u, 0x001c607cu);
+           add_code_hook(s, uc, 0x001c6078u, 0x001c607cu) &&
+           add_code_hook(s, uc, 0x001c6538u, 0x001c653cu) &&
+           add_code_hook(s, uc, 0x001c6574u, 0x001c6578u) &&
+           add_code_hook(s, uc, 0x001caa50u, 0x001caa54u) &&
+           add_code_hook(s, uc, 0x001caa7cu, 0x001caa88u);
 }
 
 static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
@@ -1592,14 +2225,25 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00001388u, 0x000013b8u) &&
            add_code_hook(s, uc, 0x00024d00u, 0x00024effu) &&
            add_code_hook(s, uc, 0x00024c40u, 0x00025030u) &&
+           add_code_hook(s, uc, 0x00025398u, 0x000253a8u) &&
+           add_code_hook(s, uc, 0x0002a058u, 0x0002a05cu) &&
+           add_code_hook(s, uc, 0x0002a8b0u, 0x0002a948u) &&
+           add_code_hook(s, uc, 0x0002fd0cu, 0x0002fdacu) &&
+           add_code_hook(s, uc, 0x000835b4u, 0x000835b8u) &&
            add_code_hook(s, uc, 0x00025274u, 0x00025278u) &&
            add_code_hook(s, uc, 0x000255a4u, 0x000255b8u) &&
            add_code_hook(s, uc, 0x00032840u, 0x00032844u) &&
+           add_code_hook(s, uc, 0x000b310cu, 0x000b3110u) &&
+           add_code_hook(s, uc, 0x000b32b8u, 0x000b3310u) &&
+           add_code_hook(s, uc, 0x000b3468u, 0x000b346cu) &&
+           add_code_hook(s, uc, 0x000b3508u, 0x000b350cu) &&
            add_code_hook(s, uc, 0x00045dfcu, 0x00045e00u) &&
            add_code_hook(s, uc, 0x00045e6cu, 0x00045e70u) &&
            add_code_hook(s, uc, 0x0004b74cu, 0x0004b750u) &&
            add_code_hook(s, uc, 0x00048060u, 0x000480b0u) &&
+           add_code_hook(s, uc, 0x000483b8u, 0x000483bcu) &&
            add_code_hook(s, uc, 0x00048300u, 0x00048400u) &&
+           add_code_hook(s, uc, 0x0004a404u, 0x0004a424u) &&
            add_code_hook(s, uc, 0x0004ec54u, 0x0004ec58u) &&
            add_code_hook(s, uc, 0x0004ee20u, 0x0004eec8u) &&
            add_code_hook(s, uc, 0x00053580u, 0x000535a8u) &&
@@ -1612,6 +2256,8 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x000ad3f8u, 0x000ad430u) &&
            add_code_hook(s, uc, 0x00099d00u, 0x00099e00u) &&
            add_code_hook(s, uc, 0x000d0bb4u, 0x000d0c58u) &&
+           add_code_hook(s, uc, 0x000d0c58u, 0x000d0c5cu) &&
+           add_code_hook(s, uc, 0x000d0c5cu, 0x000d0c94u) &&
            add_code_hook(s, uc, 0x000d57c8u, 0x000d5800u) &&
            add_code_hook(s, uc, 0x0013cc0cu, 0x0013cc10u) &&
            add_code_hook(s, uc, 0x00152600u, 0x00152700u) &&
@@ -1628,6 +2274,9 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x001c5188u, 0x001c5190u) &&
            add_code_hook(s, uc, 0x001c5808u, 0x001c5810u) &&
            add_code_hook(s, uc, 0x001c6078u, 0x001c607cu) &&
+           add_code_hook(s, uc, 0x001c6538u, 0x001c653cu) &&
+           add_code_hook(s, uc, 0x001c6574u, 0x001c6578u) &&
+           add_code_hook(s, uc, 0x001caa50u, 0x001caa88u) &&
            add_code_hook(s, uc, 0x001c86a4u, 0x001c86a8u) &&
            add_code_hook(s, uc, 0x001d0900u, 0x001d0904u) &&
            add_code_hook(s, uc, 0x001d1348u, 0x001d134cu) &&
@@ -1682,6 +2331,9 @@ bool n1g_cpu_init(n1g_state_t *s) {
                               N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE - 1u)) {
             return false;
         }
+        if (s->opts.probe_pc_count > 0 && !add_probe_pc_hooks(s, s->cpu[i].uc)) {
+            return false;
+        }
         if (s->opts.profile == N1G_PROFILE_APPLE &&
             ((s->opts.verbose
                   ? !add_apple_verbose_hooks(s, s->cpu[i].uc)
@@ -1698,6 +2350,15 @@ bool n1g_cpu_init(n1g_state_t *s) {
              (s->opts.verbose &&
               !add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_WRITE, (void *)hook_mem_write,
                                 0x11fa0000u, 0x12000000u)))) {
+            return false;
+        }
+        if (s->opts.profile == N1G_PROFILE_APPLE &&
+            !add_hook_checked(s,
+                              s->cpu[i].uc,
+                              UC_HOOK_MEM_WRITE,
+                              (void *)hook_apple_key_gate_write,
+                              0x10705468u,
+                              0x1070546fu)) {
             return false;
         }
         if (!add_hook_checked(s, s->cpu[i].uc, UC_HOOK_MEM_INVALID, (void *)hook_mem_invalid, 1, 0)) {
@@ -1833,6 +2494,10 @@ bool n1g_cpu_apply_memmap(n1g_state_t *s) {
 }
 
 bool n1g_cpu_step_slice(n1g_state_t *s, n1g_core_t core, uint32_t max_insns) {
+    if (s->tb_flush_pending) {
+        s->tb_flush_pending = false;
+        n1g_cpu_flush_tb(s);
+    }
     if (s->cpu[core].halted || !s->cpu[core].running) {
         return true;
     }
@@ -1845,6 +2510,29 @@ bool n1g_cpu_step_slice(n1g_state_t *s, n1g_core_t core, uint32_t max_insns) {
     s->cpu[core].guest_insns += max_insns;
     s->counters.guest_insns += max_insns;
     return true;
+}
+
+void n1g_cpu_raise_fiq(n1g_state_t *s, n1g_core_t core) {
+    uint32_t cpsr = n1g_cpu_get_reg(s, core, UC_ARM_REG_CPSR);
+    if (cpsr & 0x40u) {
+        return;
+    }
+
+    uint32_t pc = n1g_cpu_pc(s, core);
+    uint32_t lr_fiq = pc + 4u;
+    /* FIQ entry: FIQ mode with both IRQ and FIQ masked. */
+    uint32_t fiq_cpsr = (cpsr & ~0x3fu) | 0xd1u;
+
+    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_CPSR, &fiq_cpsr);
+    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_SPSR, &cpsr);
+    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_LR, &lr_fiq);
+    uint32_t vector = (s->cachecon.regs[0] & 0x10u) ? s->evp.regs[7] : 0x1cu;
+    uc_reg_write(s->cpu[core].uc, UC_ARM_REG_PC, &vector);
+
+    s->cpu[core].halted = false;
+    s->cpucon.ctl[core] &= ~0xe0000000u;
+    s->counters.irq_count++;
+    uc_emu_stop(s->cpu[core].uc);
 }
 
 void n1g_cpu_raise_irq(n1g_state_t *s, n1g_core_t core) {

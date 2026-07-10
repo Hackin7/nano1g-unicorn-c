@@ -4,6 +4,7 @@
 #include "nano1g/disk_ata.h"
 #include "nano1g/boot_reset.h"
 #include "nano1g/firmware.h"
+#include "nano1g/input_script.h"
 #include "nano1g/ram.h"
 #include "nano1g/trace.h"
 #include "nano1g/web_frontend.h"
@@ -20,22 +21,33 @@ static void handle_stop_signal(int sig) {
     stop_requested = 1;
 }
 
-static const char apple_stage0_label[] = "Apple stage0 OS";
-static const char apple_direct_label[] = "Apple official direct";
+static const char apple_stage0_label[] = "Apple stage0 canary";
+static const char apple_direct_label[] = "Apple OS direct diagnostic";
+static const char apple_flash_label[] = "Apple official boot";
 static const char rockbox_label[] = "Rockbox";
 
 static const char apple_stage0_fw[] = "tmp/stage0-sysinfo-osos-probe.bin";
 static const char apple_direct_fw[] = "../artifacts/firmware/apple_nano_14.5.3.1_fw.bin";
+static const char apple_default_flash_rom[] = "../artifacts/firmware/apple_nano_1g_bootrom.bin";
 static const char apple_disk[] = "../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img";
 static const char rockbox_fw[] = "../artifacts/firmware/rockbox.ipod";
 static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-gpt.img";
 
+static const char *apple_flash_rom_path(void) {
+    const char *env = getenv("NANO1G_APPLE_BOOTROM");
+    return (env && env[0]) ? env : apple_default_flash_rom;
+}
+
+static void apply_run_preset(n1g_opts_t *opts, const char *preset);
+
 static void usage(void) {
-    puts("nano1g --profile apple|rockbox [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
+    puts("nano1g [--run rockbox|apple-stage0|apple-direct|apple-official|apple-flash]");
+    puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
     puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
+    puts("       [--battery-percent N] [--main-charger] [--usb-charger]");
     puts("       [--web PORT] [--web-no-hold] [--run-forever]");
     puts("       [--trace-pc] [--trace-mmio] [--verbose]");
 }
@@ -75,12 +87,15 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     opts.rtc_usec_per_tick = 1;
     opts.load_addr = N1G_SDRAM_BASE;
     opts.dump_count = 1;
+    opts.battery_percent = 100u;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
             usage();
             exit(0);
+        } else if (strcmp(a, "--run") == 0 && i + 1 < argc) {
+            apply_run_preset(&opts, argv[++i]);
         } else if (strcmp(a, "--profile") == 0 && i + 1 < argc) {
             if (!parse_profile(argv[++i], &opts.profile)) {
                 n1g_die("invalid profile: %s", argv[i]);
@@ -115,6 +130,11 @@ static n1g_opts_t parse_args(int argc, char **argv) {
         } else if (strcmp(a, "--entry") == 0 && i + 1 < argc) {
             opts.entry = n1g_parse_u32(argv[++i], "entry");
             opts.entry_set = true;
+        } else if (strcmp(a, "--probe-pc") == 0 && i + 1 < argc) {
+            if (opts.probe_pc_count >= 16u) {
+                n1g_die("--probe-pc supports at most 16 addresses");
+            }
+            opts.probe_pc[opts.probe_pc_count++] = n1g_parse_u32(argv[++i], "probe-pc");
         } else if (strcmp(a, "--dump32") == 0 && i + 1 < argc) {
             opts.dump_addr = n1g_parse_u32(argv[++i], "dump32");
             opts.dump_set = true;
@@ -137,6 +157,15 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.ram_fill_zero = true;
         } else if (strcmp(a, "--input") == 0 && i + 1 < argc) {
             opts.input_script = argv[++i];
+        } else if (strcmp(a, "--battery-percent") == 0 && i + 1 < argc) {
+            opts.battery_percent = n1g_parse_u32(argv[++i], "battery-percent");
+            if (opts.battery_percent > 100u) {
+                n1g_die("--battery-percent must be between 0 and 100");
+            }
+        } else if (strcmp(a, "--main-charger") == 0) {
+            opts.main_charger_connected = true;
+        } else if (strcmp(a, "--usb-charger") == 0) {
+            opts.usb_charger_connected = true;
         } else if (strcmp(a, "--web") == 0 && i + 1 < argc) {
             uint32_t port = n1g_parse_u32(argv[++i], "web");
             if (port == 0 || port > 65535u) {
@@ -184,7 +213,9 @@ static void infer_run_label(n1g_opts_t *opts) {
         return;
     }
     if (opts->profile == N1G_PROFILE_APPLE) {
-        if (opts->firmware_path && strstr(opts->firmware_path, "stage0")) {
+        if (opts->boot_mode == N1G_BOOT_FLASH) {
+            opts->run_label = apple_flash_label;
+        } else if (opts->firmware_path && strstr(opts->firmware_path, "stage0")) {
             opts->run_label = apple_stage0_label;
         } else {
             opts->run_label = apple_direct_label;
@@ -199,6 +230,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const uint16_t web_port = opts->web_port;
     const bool web_no_hold = opts->web_no_hold;
     const char *ppm_path = opts->ppm_path;
+    const bool run_forever = opts->run_forever;
     const bool trace_pc = opts->trace_pc;
     const bool trace_mmio = opts->trace_mmio;
     const bool verbose = opts->verbose;
@@ -209,7 +241,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->web_enabled = web_enabled;
     opts->web_port = web_port;
     opts->web_no_hold = web_no_hold;
-    opts->run_forever = true;
+    opts->run_forever = run_forever;
     opts->ppm_path = ppm_path;
     opts->trace_pc = trace_pc;
     opts->trace_mmio = trace_mmio;
@@ -217,8 +249,9 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->rtc_usec_per_tick = 1;
     opts->timer_divider = 20;
     opts->load_addr = N1G_SDRAM_BASE;
+    opts->battery_percent = 100u;
 
-    if (strcmp(preset, "apple-stage0") == 0) {
+    if (strcmp(preset, "apple-native") == 0 || strcmp(preset, "apple-stage0") == 0) {
         opts->run_label = apple_stage0_label;
         opts->profile = N1G_PROFILE_APPLE;
         opts->firmware_path = apple_stage0_fw;
@@ -237,6 +270,17 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
         opts->disk_path = apple_disk;
         opts->max_insns = 175000000u;
         opts->slice_insns = 128;
+    } else if (strcmp(preset, "apple-official") == 0 || strcmp(preset, "apple-flash") == 0) {
+        opts->run_label = apple_flash_label;
+        opts->profile = N1G_PROFILE_APPLE;
+        opts->boot_mode = N1G_BOOT_FLASH;
+        opts->flash_path = apple_flash_rom_path();
+        opts->disk_path = apple_disk;
+        opts->max_insns = 175000000u;
+        opts->slice_insns = 512;
+        opts->timer_divider = 1;
+        opts->rtc_usec_per_tick = 512;
+        opts->virtual_memmap = true;
     } else {
         opts->run_label = rockbox_label;
         opts->profile = N1G_PROFILE_ROCKBOX;
@@ -255,7 +299,11 @@ static bool init_state(n1g_state_t *s, n1g_opts_t opts) {
     memset(s->flash.bytes, 0xff, sizeof(s->flash.bytes));
 
     if (s->opts.input_script) {
-        n1g_info(s, "input script accepted for future injection: %s", s->opts.input_script);
+        if (!n1g_input_script_load(&s->input_script_state, s->opts.input_script)) {
+            n1g_log(s, "invalid --input script: %s", s->opts.input_script);
+            return false;
+        }
+        n1g_info(s, "input script loaded: %s", s->opts.input_script);
     }
     if (!n1g_ram_init(s)) {
         n1g_die("failed to allocate RAM");
@@ -426,13 +474,15 @@ run_image:
     do {
         restart_now = false;
         restart_preset[0] = '\0';
-        n1g_info(&s, "start image=%s max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u",
+        n1g_info(&s, "start image=%s max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u map_flash_zero=%u virtual_memmap=%u",
                  s.opts.run_label ? s.opts.run_label : "custom",
                  (unsigned long long)s.opts.max_insns,
                  s.opts.slice_insns,
                  s.opts.timer_divider,
                  s.opts.rtc_usec_per_tick,
-                 s.opts.run_forever ? 1u : 0u);
+                 s.opts.run_forever ? 1u : 0u,
+                 s.opts.map_flash_zero ? 1u : 0u,
+                 s.opts.virtual_memmap ? 1u : 0u);
         uint64_t remaining = s.opts.max_insns;
         while ((s.opts.run_forever || remaining > 0) && !stop_requested) {
             uint32_t slice = s.opts.slice_insns;
@@ -448,6 +498,9 @@ run_image:
                 }
             }
             n1g_bus_tick(&s);
+            if (s.opts.input_script) {
+                n1g_input_script_tick(&s);
+            }
             if (!s.opts.run_forever) {
                 remaining -= slice;
             }
@@ -500,7 +553,7 @@ run_image:
         n1g_info(&s, "%s", line);
     }
     n1g_info(&s,
-             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu disk_reads=%llu irq=%llu pc=0x%08x",
+             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu disk_reads=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
              (unsigned long long)s.counters.guest_insns,
              (unsigned long long)s.counters.device_ticks,
              (unsigned long long)s.counters.mmio_reads,
@@ -508,7 +561,12 @@ run_image:
              (unsigned long long)s.counters.lcd_words,
              (unsigned long long)s.counters.disk_reads,
              (unsigned long long)s.counters.irq_count,
-             n1g_cpu_pc(&s, N1G_CORE_CPU));
+             n1g_cpu_pc(&s, N1G_CORE_CPU),
+             (unsigned long long)s.i2s.tx_halfwords,
+             (unsigned long long)s.i2s.tx_drained_halfwords,
+             (unsigned long long)(s.dma.ch[0].starts + s.dma.ch[1].starts + s.dma.ch[2].starts + s.dma.ch[3].starts),
+             (unsigned long long)(s.dma.ch[0].completions + s.dma.ch[1].completions + s.dma.ch[2].completions + s.dma.ch[3].completions),
+             (unsigned long long)(s.dma.ch[0].bytes_pushed + s.dma.ch[1].bytes_pushed + s.dma.ch[2].bytes_pushed + s.dma.ch[3].bytes_pushed));
     n1g_info(&s,
              "cores cpu_pc=0x%08x cop_pc=0x%08x cpu_halted=%u cop_halted=%u cpu_ctl=0x%08x cop_ctl=0x%08x cpu_insns=%llu cop_insns=%llu",
              n1g_cpu_pc(&s, N1G_CORE_CPU),
@@ -552,6 +610,179 @@ run_image:
                 (unsigned long long)s.counters.apple_ui_hits[13],
                 (unsigned long long)s.counters.apple_ui_hits[14],
                 (unsigned long long)s.counters.apple_ui_hits[15]);
+        if (s.counters.apple_handoff_seen) {
+            const bool handoff_ok =
+                s.counters.apple_handoff_tag == 0x53797349u &&
+                s.counters.apple_handoff_sysinfo_ram;
+            n1g_info(&s,
+                    "apple_handoff status=%s pc=0x%08x slot=0x%08x tag=0x%08x sysinfo=0x%08x sysinfo_ram=%u sysinfo_e0=0x%08x sysinfo_e4=0x%08x",
+                    handoff_ok ? "ok" : "missing-native-boot-metadata",
+                    s.counters.apple_handoff_pc,
+                    s.counters.apple_handoff_slot,
+                    s.counters.apple_handoff_tag,
+                    s.counters.apple_handoff_sysinfo,
+                    s.counters.apple_handoff_sysinfo_ram ? 1u : 0u,
+                    s.counters.apple_handoff_sysinfo_e0,
+                    s.counters.apple_handoff_sysinfo_e4);
+        }
+        n1g_info(&s,
+                "apple_input_hits isr_raw_1c6538=%llu isr_store_1c6574=%llu wake_2a058=%llu evq_post_b3468=%llu evq_got_b3508=%llu ui_qread_d0bb4=%llu lang_loop_4ee20=%llu lang_event_4ee44=%llu lang_scroll_4ee58=%llu lang_accept_4eec8=%llu select_24db4=%llu lang_post_4eeb4=%llu",
+                (unsigned long long)s.counters.apple_input_hits[0],
+                (unsigned long long)s.counters.apple_input_hits[1],
+                (unsigned long long)s.counters.apple_input_hits[2],
+                (unsigned long long)s.counters.apple_input_hits[3],
+                (unsigned long long)s.counters.apple_input_hits[4],
+                (unsigned long long)s.counters.apple_input_hits[5],
+                (unsigned long long)s.counters.apple_input_hits[6],
+                (unsigned long long)s.counters.apple_input_hits[7],
+                (unsigned long long)s.counters.apple_input_hits[8],
+                (unsigned long long)s.counters.apple_input_hits[9],
+                (unsigned long long)s.counters.apple_input_hits[10],
+                (unsigned long long)s.counters.apple_input_hits[11]);
+        n1g_info(&s,
+                "apple_input_last isr_raw=r0:0x%08x r1:0x%08x raw:0x%08x isr_store=buttons:0x%08x wheel:0x%08x state:0x%08x wake=r0:0x%08x r1:0x%08x lr:0x%08x lang_event=r4:0x%08x kind:0x%08x w28:0x%08x w30:0x%08x accept=r4:0x%08x kind:0x%08x w28:0x%08x w30:0x%08x select=r4:0x%08x kind:0x%08x w28:0x%08x w30:0x%08x",
+                s.counters.apple_input_last[0][0],
+                s.counters.apple_input_last[0][1],
+                s.counters.apple_input_last[0][7],
+                s.counters.apple_input_last[1][5],
+                s.counters.apple_input_last[1][6],
+                s.counters.apple_input_last[1][7],
+                s.counters.apple_input_last[2][0],
+                s.counters.apple_input_last[2][1],
+                s.counters.apple_input_last[2][6],
+                s.counters.apple_input_last[7][4],
+                s.counters.apple_input_last[7][5],
+                s.counters.apple_input_last[7][6],
+                s.counters.apple_input_last[7][7],
+                s.counters.apple_input_last[9][4],
+                s.counters.apple_input_last[9][5],
+                s.counters.apple_input_last[9][6],
+                s.counters.apple_input_last[9][7],
+                s.counters.apple_input_last[10][4],
+                s.counters.apple_input_last[10][5],
+                s.counters.apple_input_last[10][6],
+                s.counters.apple_input_last[10][7]);
+        n1g_info(&s,
+                "apple_input_task_hits task_entry_1caa50=%llu wait_1caa7c=%llu woke_1caa84=%llu keypost_2fd0c=%llu gate1_2fd60=%llu gate2_2fd70=%llu gate3_2fd84=%llu gate4_2fd9c=%llu keypost_send_2fda8=%llu evq_dispatch_b32b8=%llu evq_handler_b32e4=%llu evq_ret_b32ec=%llu evq_forward_b330c=%llu msg_post_48060=%llu queue_send_32840=%llu ui_dispatch_d0c58=%llu",
+                (unsigned long long)s.counters.apple_input_task_hits[0],
+                (unsigned long long)s.counters.apple_input_task_hits[1],
+                (unsigned long long)s.counters.apple_input_task_hits[2],
+                (unsigned long long)s.counters.apple_input_task_hits[3],
+                (unsigned long long)s.counters.apple_input_task_hits[4],
+                (unsigned long long)s.counters.apple_input_task_hits[5],
+                (unsigned long long)s.counters.apple_input_task_hits[6],
+                (unsigned long long)s.counters.apple_input_task_hits[7],
+                (unsigned long long)s.counters.apple_input_task_hits[8],
+                (unsigned long long)s.counters.apple_input_task_hits[9],
+                (unsigned long long)s.counters.apple_input_task_hits[10],
+                (unsigned long long)s.counters.apple_input_task_hits[11],
+                (unsigned long long)s.counters.apple_input_task_hits[12],
+                (unsigned long long)s.counters.apple_input_task_hits[13],
+                (unsigned long long)s.counters.apple_input_task_hits[14],
+                (unsigned long long)s.counters.apple_input_task_hits[15]);
+        n1g_info(&s,
+                "apple_input_task_last wait=r0:0x%08x id:0x%08x woke=r0:0x%08x id:0x%08x keypost=r0:0x%08x r1:0x%08x send=r0:0x%08x r1:0x%08x queue=0x%08x payload=0x%08x p0=0x%08x p1=0x%08x ui_evt=0x%08x kind=0x%08x code=0x%08x",
+                s.counters.apple_input_task_last[1][0],
+                s.counters.apple_input_task_last[1][1],
+                s.counters.apple_input_task_last[2][0],
+                s.counters.apple_input_task_last[2][1],
+                s.counters.apple_input_task_last[3][0],
+                s.counters.apple_input_task_last[3][1],
+                s.counters.apple_input_task_last[8][0],
+                s.counters.apple_input_task_last[8][1],
+                s.counters.apple_input_task_last[14][0],
+                s.counters.apple_input_task_last[14][1],
+                s.counters.apple_input_task_last[14][6],
+                s.counters.apple_input_task_last[14][7],
+                s.counters.apple_input_task_last[15][5],
+                s.counters.apple_input_task_last[15][6],
+                s.counters.apple_input_task_last[15][7]);
+        n1g_info(&s,
+                "apple_key_gate writes=%llu last_pc=0x%08x addr=0x%08x size=%u value=0x%08x r0=0x%08x r1=0x%08x lr=0x%08x bytes68=0x%08x bytes6c=0x%08x",
+                (unsigned long long)s.counters.apple_key_gate_writes,
+                s.counters.apple_key_gate_last[0],
+                s.counters.apple_key_gate_last[1],
+                s.counters.apple_key_gate_last[2],
+                s.counters.apple_key_gate_last[3],
+                s.counters.apple_key_gate_last[4],
+                s.counters.apple_key_gate_last[5],
+                s.counters.apple_key_gate_last[6],
+                s.counters.apple_key_gate_last[7],
+                s.counters.apple_key_gate_bytes);
+        n1g_info(&s,
+                "apple_ui_ready hits_483b8=%llu entry_4a404=%llu precall_4a410=%llu store_4a41c=%llu post_4a420=%llu bytes68=0x%08x bytes6c=0x%08x store_lr=0x%08x entry_lr=0x%08x",
+                (unsigned long long)s.counters.apple_ui_ready_hits[0],
+                (unsigned long long)s.counters.apple_ui_ready_hits[1],
+                (unsigned long long)s.counters.apple_ui_ready_hits[2],
+                (unsigned long long)s.counters.apple_ui_ready_hits[3],
+                (unsigned long long)s.counters.apple_ui_ready_hits[4],
+                s.counters.apple_ui_ready_bytes68,
+                s.counters.apple_ui_ready_bytes6c,
+                s.counters.apple_ui_ready_last[3][7],
+                s.counters.apple_ui_ready_last[1][7]);
+        n1g_info(&s,
+                "apple_work_pool hits_b310c=%llu alloc_835b4=%llu gate_d0c54=%llu dispatch_d0c58=%llu pass_d0c5c=%llu guard_d0c68=%llu handler_load_d0c78=%llu handler_bx_d0c90=%llu head=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x branch_obj=0x%08x stale_r1=0x%08x dispatch_r4=0x%08x handler=0x%08x dispatch_lr=0x%08x",
+                (unsigned long long)s.counters.apple_work_pool_hits[0],
+                (unsigned long long)s.counters.apple_work_pool_hits[1],
+                (unsigned long long)s.counters.apple_work_pool_hits[2],
+                (unsigned long long)s.counters.apple_work_pool_hits[3],
+                (unsigned long long)s.counters.apple_work_pool_hits[4],
+                (unsigned long long)s.counters.apple_work_pool_hits[5],
+                (unsigned long long)s.counters.apple_work_pool_hits[6],
+                (unsigned long long)s.counters.apple_work_pool_hits[7],
+                s.counters.apple_work_pool_head,
+                s.counters.apple_work_pool_words[0],
+                s.counters.apple_work_pool_words[1],
+                s.counters.apple_work_pool_words[2],
+                s.counters.apple_work_pool_words[3],
+                s.counters.apple_work_pool_last[3][0],
+                s.counters.apple_work_pool_last[3][1],
+                s.counters.apple_work_pool_last[3][4],
+                s.counters.apple_work_pool_last[7][3],
+                s.counters.apple_work_pool_last[3][7]);
+        n1g_info(&s,
+                "apple_ui_branch hits_4ec94=%llu load_4eca0=%llu dispatch_25398=%llu select_24db4=%llu accept_24e20=%llu tail_24f08=%llu lang_accept_4eec8=%llu lang_event_4ee44=%llu obj=0x%08x obj_words=0x%08x,0x%08x,0x%08x,0x%08x dispatch_r0=0x%08x dispatch_r4=0x%08x select_kind=0x%08x select_w30=0x%08x accept_kind=0x%08x accept_w30=0x%08x",
+                (unsigned long long)s.counters.apple_ui_branch_hits[0],
+                (unsigned long long)s.counters.apple_ui_branch_hits[1],
+                (unsigned long long)s.counters.apple_ui_branch_hits[2],
+                (unsigned long long)s.counters.apple_ui_branch_hits[3],
+                (unsigned long long)s.counters.apple_ui_branch_hits[4],
+                (unsigned long long)s.counters.apple_ui_branch_hits[5],
+                (unsigned long long)s.counters.apple_ui_branch_hits[6],
+                (unsigned long long)s.counters.apple_ui_branch_hits[7],
+                s.counters.apple_ui_branch_last[0][0],
+                s.counters.apple_ui_branch_words[0][0],
+                s.counters.apple_ui_branch_words[0][1],
+                s.counters.apple_ui_branch_words[0][2],
+                s.counters.apple_ui_branch_words[0][3],
+                s.counters.apple_ui_branch_last[2][0],
+                s.counters.apple_ui_branch_last[2][4],
+                s.counters.apple_ui_branch_words[3][3],
+                s.counters.apple_ui_branch_last[3][3],
+                s.counters.apple_ui_branch_words[4][3],
+                s.counters.apple_ui_branch_last[4][3]);
+        n1g_info(&s,
+                "apple_ui_dispatch post_2539c=%llu loaded_253a0=%llu branch_253a4=%llu objtab_2a8b0=%llu cmp_2a8d4=%llu found_2a8ec=%llu clear_2a91c=%llu post_2a944=%llu obj=0x%08x obj_words=0x%08x,0x%08x,0x%08x,0x%08x vt=0x%08x,0x%08x,0x%08x,0x%08x objtab_r0=0x%08x objtab_r1=0x%08x objtab_lr=0x%08x",
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[0],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[1],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[2],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[3],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[4],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[5],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[6],
+                (unsigned long long)s.counters.apple_ui_dispatch_hits[7],
+                s.counters.apple_ui_dispatch_last[2][0],
+                s.counters.apple_ui_dispatch_words[2][0],
+                s.counters.apple_ui_dispatch_words[2][1],
+                s.counters.apple_ui_dispatch_words[2][2],
+                s.counters.apple_ui_dispatch_words[2][3],
+                s.counters.apple_ui_dispatch_words[2][4],
+                s.counters.apple_ui_dispatch_words[2][5],
+                s.counters.apple_ui_dispatch_words[2][6],
+                s.counters.apple_ui_dispatch_words[2][7],
+                s.counters.apple_ui_dispatch_last[3][0],
+                s.counters.apple_ui_dispatch_last[3][1],
+                s.counters.apple_ui_dispatch_last[3][7]);
         n1g_info(&s,
                 "apple_lcd_task_hits entry_53580=%llu e53584=%llu e53588=%llu e53590=%llu e53594=%llu e535a0=%llu e535a4=%llu q_53b04=%llu q_53b08=%llu q_53b0c=%llu q_53b10=%llu q_53b14=%llu dirty_53b18=%llu post_53b20=%llu submit_53b38=%llu wait_53db8=%llu flush_53f28=%llu flush_53f30=%llu",
                 (unsigned long long)s.counters.apple_lcd_task_hits[0],

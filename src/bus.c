@@ -11,6 +11,26 @@ static uint32_t mask_value(uint32_t value, uint32_t size) {
     return value;
 }
 
+/* First-access log for MMIO addresses that fall through every device route.
+ * One line per 64-byte block keeps verbose runs readable while still
+ * surfacing each unmodeled register bank native firmware touches. */
+#define N1G_UNROUTED_SLOTS 128u
+static uint32_t unrouted_blocks[N1G_UNROUTED_SLOTS];
+static size_t unrouted_count;
+
+static void log_unrouted(n1g_state_t *s, const char *kind, uint32_t addr, uint32_t size, uint32_t value) {
+    uint32_t block = (addr & ~0x3fu) | (kind[0] == 'w' ? 1u : 0u);
+    for (size_t i = 0; i < unrouted_count; i++) {
+        if (unrouted_blocks[i] == block) {
+            return;
+        }
+    }
+    if (unrouted_count < N1G_UNROUTED_SLOTS) {
+        unrouted_blocks[unrouted_count++] = block;
+    }
+    n1g_log(s, "unrouted mmio %s addr=0x%08x size=%u value=0x%08x", kind, addr, size, value);
+}
+
 uint32_t n1g_dev_stub_read(n1g_state_t *s, const char *name, uint32_t base, uint32_t offset, uint32_t size) {
     (void)name;
     (void)base;
@@ -77,6 +97,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) {
         return n1g_dev_lcd2_read(s, addr - N1G_LCD2_BASE, size);
     }
+    if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) {
+        return n1g_dev_i2s_read(s, addr - N1G_I2S_BASE, size);
+    }
     if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         return n1g_dev_i2c_read(s, addr - N1G_I2C_BASE, size);
     }
@@ -92,6 +115,7 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) {
         return n1g_dev_memcon_read(s, addr - N1G_MEMCON_BASE, size);
     }
+    log_unrouted(s, "read", addr, size, 0);
     return mask_value(0, size);
 }
 
@@ -126,6 +150,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_ppcon_write(s, addr - N1G_PPCON_BASE, size, value);
     } else if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) {
         n1g_dev_lcd2_write(s, addr - N1G_LCD2_BASE, size, value);
+    } else if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) {
+        n1g_dev_i2s_write(s, addr - N1G_I2S_BASE, size, value);
     } else if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         n1g_dev_i2c_write(s, addr - N1G_I2C_BASE, size, value);
     } else if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) {
@@ -136,6 +162,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_usb_write(s, addr - N1G_USB_BASE, size, value);
     } else if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) {
         n1g_dev_memcon_write(s, addr - N1G_MEMCON_BASE, size, value);
+    } else {
+        log_unrouted(s, "write", addr, size, value);
     }
 }
 
@@ -145,7 +173,9 @@ void n1g_bus_write(n1g_state_t *s, uint32_t addr, uint32_t size, uint32_t value)
 
 void n1g_bus_tick(n1g_state_t *s) {
     s->counters.device_ticks++;
+    n1g_dev_opto_tick(s);
     n1g_dev_timer_tick(s);
+    n1g_dev_i2s_tick(s);
     n1g_dev_dma_tick(s);
     n1g_dev_cpucon_tick(s);
     n1g_dev_intc_tick(s);

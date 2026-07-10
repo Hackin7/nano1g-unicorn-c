@@ -125,6 +125,15 @@ static bool load_ipod_firmware(n1g_state_t *s, const uint8_t *fw, size_t fw_size
     return true;
 }
 
+static bool looks_like_wrapped_firmware(const uint8_t *fw, size_t fw_size) {
+    return fw_size >= 0x4200u && rd32(fw + 0x100) == 0x5b68695du;
+}
+
+static bool looks_like_zip(const uint8_t *fw, size_t fw_size) {
+    return fw_size >= 4u && fw[0] == 'P' && fw[1] == 'K' &&
+           fw[2] == 0x03u && fw[3] == 0x04u;
+}
+
 bool n1g_load_firmware_from_disk(n1g_state_t *s) {
     if (!s->disk.data || s->disk.size < 0x1200) {
         n1g_info(s, "no disk image loaded for firmware-from-disk");
@@ -192,6 +201,26 @@ bool n1g_load_flash_rom(n1g_state_t *s) {
     size_t rom_size = 0;
     if (!n1g_read_file(s->opts.flash_path, &rom, &rom_size)) {
         n1g_info(s, "failed to read flash ROM: %s", s->opts.flash_path);
+        if (s->opts.profile == N1G_PROFILE_APPLE && s->opts.boot_mode == N1G_BOOT_FLASH) {
+            n1g_info(s,
+                     "Apple official boot needs a raw %u-byte Nano 1G boot ROM/NOR dump; pass --flash-rom or set NANO1G_APPLE_BOOTROM",
+                     N1G_FLASH_SIZE);
+        }
+        return false;
+    }
+    if (s->opts.profile == N1G_PROFILE_APPLE && s->opts.boot_mode == N1G_BOOT_FLASH &&
+        rom_size != N1G_FLASH_SIZE) {
+        n1g_info(s,
+                 "Apple official boot requires a raw %u-byte Nano 1G boot ROM/NOR dump at --flash-rom; got %zu bytes from %s",
+                 N1G_FLASH_SIZE,
+                 rom_size,
+                 s->opts.flash_path);
+        if (looks_like_wrapped_firmware(rom, rom_size)) {
+            n1g_info(s, "flash source looks like a wrapped firmware bundle, not reset-vector boot ROM");
+        } else if (looks_like_zip(rom, rom_size)) {
+            n1g_info(s, "flash source looks like a ZIP updater/container, not reset-vector boot ROM");
+        }
+        free(rom);
         return false;
     }
     if (rom_size > N1G_FLASH_SIZE) {

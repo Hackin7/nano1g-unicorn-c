@@ -79,7 +79,7 @@ def has_printable_ratio(data):
     return printable / len(sample)
 
 
-def classify_blob(label, data, min_vector_hits):
+def classify_blob(label, data, min_vector_hits, max_candidate_printable_ratio):
     entries = parse_wrapped(data, 0)
     if entries:
         print(
@@ -97,10 +97,11 @@ def classify_blob(label, data, min_vector_hits):
         return "container"
 
     hits = vector_hits_at_start(data)
-    if hits >= min_vector_hits:
+    printable_ratio = has_printable_ratio(data)
+    if hits >= min_vector_hits and printable_ratio <= max_candidate_printable_ratio:
         print(
             "file=%s kind=raw-reset-vector-candidate vector_hits=%u printable_ratio=%.3f sha256=%s"
-            % (label, hits, has_printable_ratio(data), sha256(data)[:16])
+            % (label, hits, printable_ratio, sha256(data)[:16])
         )
         return "candidate"
 
@@ -124,13 +125,18 @@ def iter_files(roots):
                 yield child
 
 
-def scan_zip(path, min_vector_hits):
+def scan_zip(path, min_vector_hits, max_candidate_printable_ratio):
     counts = {"wrapped": 0, "container": 0, "candidate": 0, "other": 0}
     with zipfile.ZipFile(path, "r") as zf:
         print("zip=%s members=%s" % (path, ",".join(zf.namelist())))
         for name in zf.namelist():
             data = zf.read(name)
-            kind = classify_blob("%s:%s" % (path, name), data, min_vector_hits)
+            kind = classify_blob(
+                "%s:%s" % (path, name),
+                data,
+                min_vector_hits,
+                max_candidate_printable_ratio,
+            )
             counts[kind] += 1
     return counts
 
@@ -144,6 +150,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("roots", nargs="+", help="files or directories to scan")
     ap.add_argument("--min-vector-hits", type=int, default=4)
+    ap.add_argument("--max-candidate-printable-ratio", type=float, default=0.70)
     ap.add_argument("--max-size", type=int, default=256 * 1024 * 1024)
     args = ap.parse_args()
 
@@ -154,10 +161,18 @@ def main():
             print("file=%s kind=skipped-too-large size=%d" % (path, path.stat().st_size))
             continue
         if path.suffix.lower() == ".zip":
-            add_counts(total, scan_zip(path, args.min_vector_hits))
+            add_counts(
+                total,
+                scan_zip(path, args.min_vector_hits, args.max_candidate_printable_ratio),
+            )
             continue
         data = path.read_bytes()
-        kind = classify_blob(str(path), data, args.min_vector_hits)
+        kind = classify_blob(
+            str(path),
+            data,
+            args.min_vector_hits,
+            args.max_candidate_printable_ratio,
+        )
         total[kind] += 1
 
     print(

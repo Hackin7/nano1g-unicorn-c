@@ -31,6 +31,9 @@ ctest --test-dir build-mingw --output-on-failure
 The Rockbox and Apple tests use fixtures from `../artifacts/` and skip when
 those local files are absent.
 
+See `docs/unicorn_emulator.md` for the current Rockbox emulator runbook,
+web-control endpoints, verified plugin status, and caveats.
+
 Manual emulator outputs should go under `tmp/`, which is gitignored. For
 example, use `--ppm tmp/apple-language.ppm` rather than writing PPMs into the
 repo root.
@@ -62,14 +65,48 @@ Open `http://127.0.0.1:8080/` while the emulator is running. With `--web`
 enabled, the process keeps serving the final LCD frame after execution stops;
 use Ctrl+C to exit, or add `--web-no-hold` for script/test runs.
 
+To run Rockbox with the content-injected disk (adds `.rockbox/rocks/` plugins,
+including `calculator.rock`, plus `Music/`) and a mocked half-charged,
+unplugged battery:
+
+```bash
+python tools/make_gpt_rockbox_disk.py \
+  ../artifacts/images/ipodhd-rockbox-nano-content.img \
+  tmp/ipodhd-rockbox-nano-content-gpt.img
+
+build-mingw/nano1g --profile rockbox \
+  --firmware ../artifacts/firmware/rockbox.ipod \
+  --disk tmp/ipodhd-rockbox-nano-content-gpt.img \
+  --run-forever \
+  --slice-insns 512 \
+  --timer-divider 1 \
+  --battery-percent 50 \
+  --web 8080 \
+  --ppm tmp/rockbox-content.ppm
+```
+
+The content disk is produced by `clicky/scripts/rawhd/inject_rockbox_content.sh`
+and is a local, gitignored fixture under `../artifacts/images/`; regenerate it
+if missing (see that script for `PLUGIN`/`MUSIC_DIR` inputs).
+
 Useful options:
 
+- `--run rockbox|apple-stage0|apple-direct|apple-official`: start from a named
+  preset. `apple-official` is the real cold-boot route. `apple-flash` remains
+  accepted as a compatibility alias for the same path.
 - `--boot-mode direct|flash`: direct loads `--firmware` into guest RAM; flash
   maps `--flash-rom` at reset vector `0x00000000` and does not preload `osos`.
 - `--firmware-from-disk`: in direct mode, find a wrapped firmware image in the
   loaded disk image and load its `osos` entry instead of using `--firmware`.
 - `--flash-rom PATH`: load a NOR/boot-ROM image, required with
   `--boot-mode flash`.
+- Web preset `Apple official boot` uses `NANO1G_APPLE_BOOTROM` when set, otherwise
+  `../artifacts/firmware/apple_nano_1g_bootrom.bin`. This preset is the
+  intended official cold-boot route, but it requires a real Apple Nano 1G flash
+  ROM dump and will fail cleanly until one is available. Updater ZIPs and
+  wrapped `osos`/`rsrc`/`aupd` firmware bundles are rejected for this path. The
+  preset enables `--virtual-memmap` because the reset-vector path is expected to
+  copy into SDRAM and remap logical zero while flash remains readable as data.
 - `--map-flash-zero`: in direct mode, keep the firmware payload at
   `--load-addr` but map the modeled NOR flash at `0x00000000` instead of the
   low SDRAM alias. This is useful for RAM-loaded updater probes that still issue
@@ -94,10 +131,43 @@ Useful options:
 - `--trace-mmio`: log MMIO accesses. This is very slow.
 - `--load-addr ADDR`: override firmware load address, default `0x10000000`.
 - `--entry ADDR`: override initial PC, default follows `--load-addr`.
-- `--input "wheel-down,wait:250,select"`: accepted and logged; device injection
-  is a later milestone.
+- `--input SCRIPT`: deterministic scripted button/wheel injection, delivered
+  one event per device tick from the main loop (`src/input_script.c`).
+  Comma-separated tokens:
+  - `wait:N` - pause N device ticks before the next event.
+  - `NAME-down` / `NAME-up`: press/release a button (`select`, `left`/`prev`,
+    `right`/`next`, `play`/`down`, `menu`).
+  - `NAME` (bare): press, hold `2000` ticks, release.
+  - `wheel:+D` / `wheel:-D`: move the click wheel by `D` raw units (the web
+    frontend's `wheel=down`/`wheel=up` buttons send `+4`/`-4`).
+
+  Timing is finicky and was calibrated empirically against the Rockbox
+  build in `../artifacts/firmware/rockbox.ipod` (see `BENCHMARKS.md`,
+  2026-07-09 plugin-launch entry, for the full worked example):
+  - A press shorter than roughly 5000-20000 ticks is not registered as a
+    short-press "enter"; a press held past ~50000+ ticks with no release
+    starts reading as a long-press (context menu / Quick Screen) instead.
+    Hold 20000-50000 ticks for reliable short-press navigation.
+  - Click-wheel scroll sensitivity is not constant across a run - Rockbox's
+    own scroll acceleration means later wheel bursts in the same session
+    move the cursor further per event than earlier ones did. Calibrate
+    per-list rather than assuming a fixed ticks-per-item ratio.
+- `--battery-percent N`: mock the PCF PMU battery ADC (`ADCS1`/`ADCS2`,
+  `src/dev_i2c.c`) to read as `N` percent (0-100), interpolated from
+  Rockbox's real IPOD_NANO discharge-voltage table so the status-bar battery
+  icon and low-battery/shutoff logic respond correctly. Default `100`.
+- `--main-charger` / `--usb-charger`: report the FireWire/main or USB charger
+  as connected on `GPIOL_INPUT_VAL` (`src/dev_gpio.c`), matching real
+  hardware's `power_input_status()` bits. Default: neither connected. Every
+  other GPIO input pin still reads idle-high (`0xffffffff`), unrelated to
+  these two flags.
 - `--web PORT`: serve a local browser frontend on `127.0.0.1:PORT`. The page
-  polls native emulator counters and the LCD framebuffer as a BMP image.
+  polls native emulator counters and the LCD framebuffer as a BMP image, and
+  exposes `/input?button=NAME&state=down|up` and `/input?wheel=down|up` for
+  live interactive control (used by the click wheel UI on the page). The status
+  feed also reports I2S/DMA audio counters (`i2s_tx`, `i2s_drained`,
+  `dma_audio_starts`, `dma_audio_done`, `dma_audio_bytes`) so playback progress
+  is visible in the browser and in scripted checks.
 - `--web-no-hold`: when `--web` is enabled, exit immediately after emulation
   instead of keeping the final frame available in the browser.
 
@@ -162,10 +232,17 @@ Implemented foundation:
   still `1` for compatibility; `smoke_timer_rtc_scale` covers the scaled path.
 - Headless LCD PPM output.
 - Local browser frontend via `--web PORT`, backed by the same native LCD
-  framebuffer that PPM output uses.
+  framebuffer that PPM output uses, with live Rockbox input controls and audio
+  activity counters.
 - Rockbox canary reaches a nonblack framebuffer.
 - Rockbox core reaches the main menu with native firmware execution using the
   GPT-wrapped disk fixture, `--slice-insns 512`, and `--timer-divider 1`.
+- Rockbox can browse the content-injected disk's `Music/` directory through the
+  native Files UI; `tests/smoke_rockbox_music_browse.cmake` records the current
+  manual regression path for the shipped MP3 fixtures.
+- The modeled DMA-to-I2S path accepts RAM-backed sample transfers, drains the
+  TX FIFO against guest time, and raises completion status; `audio_path_unit`
+  covers that device-level playback plumbing.
 - The standalone Rockbox bootloader fixture runs from fast RAM and reaches a
   nonblack framebuffer without synthetic sysinfo handoff state.
 - The local `../artifacts/firmware/bootloader.bin` fixture is useful as a
@@ -207,17 +284,20 @@ Implemented foundation:
   latched MMIO. Rockbox identifies this range as `USB_BASE`; Apple probes
   `USB_BASE+0x184` during early UI bring-up, so mapping this as hardware MMIO
   avoids an unmapped-memory fault without shimming firmware behavior.
-- Flash boot can now be combined with `--virtual-memmap`; a native smoke starts
+- Flash boot can now be combined with `--virtual-memmap`; the Apple official
+  preset enables it by default. A native smoke starts
   at the flash reset vector, copies code into SDRAM, programs PP MMAP, and
   verifies Unicorn fetches virtual zero from SDRAM while data reads still see
   modeled NOR flash. This is the mode a real Apple boot ROM path is expected to
   need.
 - The Unicorn SWI hook logs Apple updater `svc 0x123456` diagnostic text in
   verbose mode without replacing guest exception handling.
-- Apple firmware starts without instruction shims, synthetic sysinfo/model RAM,
-  or synthetic framebuffer output. It currently stops early because the real
-  boot metadata/sysinfo source is not modeled yet. The native Language screen is
-  not working.
+- Apple `osos` direct boot starts without instruction shims, synthetic
+  sysinfo/model RAM, or synthetic framebuffer output. It intentionally remains
+  a diagnostic path: with the current local artifacts it stops after 384 guest
+  instructions at `0x000013b4` because the real boot metadata/sysinfo producer
+  has not run. The official cold-boot target is `--boot-mode flash` with a real
+  Nano 1G ROM dump.
 - The decrypted Apple `aupd` payload can run in flash mode as native ARM code
   far enough to probe ATA and emit its own diagnostic text, but it behaves like
   an updater waiting for an update command stream and currently reports
@@ -279,9 +359,10 @@ Implemented foundation:
   the native language loop, view delivery, and LCD dirty/post path. It still is
   not a Language-screen success condition because no native LCD flush reaches
   the modeled LCD yet.
-- CTest smoke coverage verifies Rockbox nonblack framebuffer output and checks
-  that the Apple smoke path stays native/no-HLE. The Apple smoke is not a
-  Language-screen acceptance test yet.
+- CTest smoke coverage verifies Rockbox nonblack framebuffer output, menu
+  navigation, plugin loading, and the DMA/I2S audio path, and
+  checks that the Apple smoke path stays native/no-HLE. The Apple smoke is not
+  a Language-screen acceptance test yet.
 - `tools/inspect_disk_image.py` verifies the local Apple/Rockbox HDD images
   carry wrapped firmware partitions at LBA 2048.
 

@@ -23,14 +23,27 @@ static uint32_t read_part(uint32_t value, uint32_t offset, uint32_t size) {
 
 static bool intc_irq_pending(n1g_state_t *s, n1g_core_t core) {
     if (core == N1G_CORE_CPU) {
-        uint32_t lo = s->intc.cpu_status & s->intc.cpu_enable;
-        uint32_t hi = s->intc.hi_cpu_status & s->intc.hi_cpu_enable;
+        uint32_t lo = s->intc.cpu_status & s->intc.cpu_enable & ~s->intc.cpu_priority;
+        uint32_t hi = s->intc.hi_cpu_status & s->intc.hi_cpu_enable & ~s->intc.hi_cpu_priority;
         return lo != 0 || ((s->intc.cpu_enable & (1u << 30)) && hi != 0);
     }
 
-    uint32_t lo = s->intc.cop_status & s->intc.cop_enable;
-    uint32_t hi = s->intc.hi_cop_status & s->intc.hi_cop_enable;
+    uint32_t lo = s->intc.cop_status & s->intc.cop_enable & ~s->intc.cop_priority;
+    uint32_t hi = s->intc.hi_cop_status & s->intc.hi_cop_enable & ~s->intc.hi_cop_priority;
     return lo != 0 || ((s->intc.cop_enable & (1u << 30)) && hi != 0);
+}
+
+/* INT_PRIORITY routes an enabled, pending source to FIQ instead of IRQ. */
+static bool intc_fiq_pending(n1g_state_t *s, n1g_core_t core) {
+    if (core == N1G_CORE_CPU) {
+        uint32_t lo = s->intc.cpu_status & s->intc.cpu_enable & s->intc.cpu_priority;
+        uint32_t hi = s->intc.hi_cpu_status & s->intc.hi_cpu_enable & s->intc.hi_cpu_priority;
+        return lo != 0 || hi != 0;
+    }
+
+    uint32_t lo = s->intc.cop_status & s->intc.cop_enable & s->intc.cop_priority;
+    uint32_t hi = s->intc.hi_cop_status & s->intc.hi_cop_enable & s->intc.hi_cop_priority;
+    return lo != 0 || hi != 0;
 }
 
 uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
@@ -39,8 +52,12 @@ uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     switch (aligned) {
     case 0x000: value = s->intc.cpu_status | intc_hi_summary(s, N1G_CORE_CPU); break;
     case 0x004: value = s->intc.cop_status | intc_hi_summary(s, N1G_CORE_COP); break;
-    case 0x008: value = 0; break;
-    case 0x00c: value = 0; break;
+    case 0x008:
+        value = s->intc.cpu_status & s->intc.cpu_enable & s->intc.cpu_priority;
+        break;
+    case 0x00c:
+        value = s->intc.cop_status & s->intc.cop_enable & s->intc.cop_priority;
+        break;
     case 0x010:
         value = s->intc.cpu_status | s->intc.cop_status |
                intc_hi_summary(s, N1G_CORE_CPU) | intc_hi_summary(s, N1G_CORE_COP);
@@ -49,9 +66,11 @@ uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     case 0x020: value = s->intc.cpu_enable; break;
     case 0x024: value = s->intc.cpu_enable; break;
     case 0x028: value = s->intc.cpu_enable; break;
+    case 0x02c: value = s->intc.cpu_priority; break;
     case 0x030: value = s->intc.cop_enable; break;
     case 0x034: value = s->intc.cop_enable; break;
     case 0x038: value = s->intc.cop_enable; break;
+    case 0x03c: value = s->intc.cop_priority; break;
     case 0x100: value = s->intc.hi_cpu_status; break;
     case 0x104: value = s->intc.hi_cop_status; break;
     case 0x108: value = 0; break;
@@ -61,9 +80,11 @@ uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     case 0x120: value = s->intc.hi_cpu_enable; break;
     case 0x124: value = s->intc.hi_cpu_enable; break;
     case 0x128: value = s->intc.hi_cpu_enable; break;
+    case 0x12c: value = s->intc.hi_cpu_priority; break;
     case 0x130: value = s->intc.hi_cop_enable; break;
     case 0x134: value = s->intc.hi_cop_enable; break;
     case 0x138: value = s->intc.hi_cop_enable; break;
+    case 0x13c: value = s->intc.hi_cop_priority; break;
     default: value = 0; break;
     }
     return read_part(value, offset, size);
@@ -92,17 +113,34 @@ void n1g_dev_intc_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
     switch (offset) {
     case 0x024: s->intc.cpu_enable |= value; break;
     case 0x028: s->intc.cpu_enable &= ~value; break;
+    case 0x02c:
+        s->intc.cpu_priority = value;
+        n1g_log(s, "intc cpu priority=0x%08x", value);
+        break;
     case 0x034: s->intc.cop_enable |= value; break;
     case 0x038: s->intc.cop_enable &= ~value; break;
+    case 0x03c: s->intc.cop_priority = value; break;
     case 0x124: s->intc.hi_cpu_enable |= value; break;
     case 0x128: s->intc.hi_cpu_enable &= ~value; break;
+    case 0x12c: s->intc.hi_cpu_priority = value; break;
     case 0x134: s->intc.hi_cop_enable |= value; break;
     case 0x138: s->intc.hi_cop_enable &= ~value; break;
+    case 0x13c: s->intc.hi_cop_priority = value; break;
     default: break;
     }
 }
 
 void n1g_dev_intc_tick(n1g_state_t *s) {
+    if (intc_fiq_pending(s, N1G_CORE_CPU)) {
+        s->cpu[N1G_CORE_CPU].halted = false;
+        s->cpucon.ctl[N1G_CORE_CPU] &= ~CPUCON_SLEEP_BITS;
+        n1g_cpu_raise_fiq(s, N1G_CORE_CPU);
+    }
+    if (intc_fiq_pending(s, N1G_CORE_COP)) {
+        s->cpu[N1G_CORE_COP].halted = false;
+        s->cpucon.ctl[N1G_CORE_COP] &= ~CPUCON_SLEEP_BITS;
+        n1g_cpu_raise_fiq(s, N1G_CORE_COP);
+    }
     if (intc_irq_pending(s, N1G_CORE_CPU)) {
         if (s->opts.profile == N1G_PROFILE_APPLE) {
             static uint32_t cpu_irq_logs;

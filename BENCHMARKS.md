@@ -7,6 +7,122 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-07-10: Web tap controls + calculator plugin demonstration
+
+Rockbox was stalling in a cache-maintenance MMIO loop after writing
+`0x6000c000`; the Unicorn MMIO callback now advances the guest PC before
+stopping for a translation-block flush, which lets execution resume at the next
+instruction instead of replaying the same store forever.
+
+The browser controls now use `/input?button=NAME&tap=1` for click-wheel button
+taps. The emulator holds the virtual button for a calibrated number of device
+ticks and releases it from the tick loop, matching the timing Rockbox expects
+for a short press. Manual verification opened the Rockbox `Plugins` menu from
+the web UI and captured `build-mingw/web-click-open.bmp`.
+
+The calculator plugin was launched from the content disk via
+`Plugins -> Applications -> calculator`; the verification capture is
+`build-mingw/calculator.bmp`. Additional native plugin launches observed during
+calibration included `cube.rock`, `2048`, `calendar`, and `battery_bench`.
+
+## 2026-07-09: Battery ADC mock + GPIO charger-detect fix
+
+Added `--battery-percent N` (0-100), `--main-charger`, and `--usb-charger`
+CLI flags.
+
+**Battery ADC (`src/dev_i2c.c`):** the PCF PMU's `ADCS1`/`ADCS2` I2C
+registers previously had no working battery model — `ADCS1` (0x30, upper 8
+bits of the 10-bit reading) wasn't implemented at all, and `ADCS2` (0x31) was
+hardcoded to `0x82`, decoding to a near-zero raw ADC value. Fixed by
+interpolating Rockbox's real IPOD_NANO `percent_to_volt_discharge` table
+(`firmware/target/arm/ipod/powermgmt-ipod-pcf.c` upstream: 0%=3230mV,
+10%=3620mV, ..., 100%=4160mV, shutoff at <=3230mV) and inverting
+`battery_adc_voltage()`'s `mv = (raw * 6000) >> 10` to get the raw ADC value
+for a requested percent. An earlier attempt that scaled linearly from 0mV at
+0% was wrong — real 0% is 3230mV, so a naive 50% guess landed below the
+actual shutoff floor and triggered Rockbox's "Battery empty! RECHARGE!
+Shutting down..." screen instead of the menu. Default (no flag) is 100%.
+
+**GPIO charger-detect (`src/dev_gpio.c`):** every GPIO input-value register
+was (and, for all pins except the one below, still is) hardcoded to read
+`0xffffffff` regardless of which pin — a blanket idle-high stub. This
+included `GPIOL_INPUT_VAL` (offset 0x13c off `N1G_GPIO_BASE`), which real
+iPod Nano 1g hardware wires to charger presence
+(`power-ipod.c::power_input_status()`: bit 3/0x08 = main/FireWire charger,
+active low; bit 4/0x10 = USB charger, active high). The blanket stub left
+bit 4 stuck high, so Rockbox always believed a USB charger was connected —
+this is what was masking the battery-ADC bug above (Rockbox suppresses the
+percentage-fill icon while charging) and is a plausible reason nobody had
+hit the near-zero default battery value before. `--main-charger` /
+`--usb-charger` now drive those two bits explicitly; default is neither
+connected. All other GPIO input pins are unaffected and still read
+`0xffffffff` (locked in by `smoke_gpio_idle_inputs`).
+
+Verified against the Rockbox main-menu status bar (`--disk
+tmp/ipodhd-rockbox-nano-content-gpt.img`): default boot shows no charging
+glyph; `--battery-percent 10` renders a nearly-empty icon, `--battery-percent
+50` a half icon, `--battery-percent 90` a nearly-full icon — matching the
+requested percentage. Full 44-test ctest suite passes throughout.
+
+## 2026-07-09: Rockbox plugin launch (native, no-HLE)
+
+Added deterministic scripted input injection (`src/input_script.c`,
+`include/nano1g/input_script.h`) wired into the `--input` flag, which was
+previously parsed but never delivered to the guest (`src/main.c`). The grammar
+is `wait:N` (device ticks), `NAME-down`/`NAME-up`, bare `NAME` (tap), and
+`wheel:+D`/`wheel:-D`.
+
+This was driven by a `/goal`-directed session testing Rockbox interactively
+through the web frontend, then reproducing the same navigation deterministically
+headless. Two calibration facts fell out of that process, both specific to this
+firmware build and worth keeping in mind for future scripted input:
+
+- Button presses shorter than ~5000-20000 ticks are not registered as a
+  short-press "enter"; presses held well past that (tens of thousands of ticks
+  with no release) start reading as a long-press (context menu / Quick Screen)
+  instead. Scripts that need reliable "enter" semantics should hold for at
+  least 20000-50000 ticks before releasing.
+- Click-wheel scroll sensitivity is not constant across a run: Rockbox's own
+  scroll acceleration means repeated wheel bursts later in the same session
+  move the list cursor much further per wheel event than earlier bursts did
+  (e.g. 14 `wheel:4` events moved 1 item in the root menu, but a later 28-event
+  burst in a nested list moved roughly 10 items). Calibrate empirically per
+  list rather than assuming a fixed ticks-per-item ratio.
+
+Deterministic run that boots to the Rockbox main menu, browses
+Plugins -> Demos, and launches `cube.rock` from the actual FAT-mounted content
+disk (`ipodhd-rockbox-nano-content.img`, which carries a full `.rockbox/rocks/`
+tree including `calculator.rock` and the demos/games/apps/viewers plugin set):
+
+```bash
+build-mingw/nano1g.exe --profile rockbox \
+  --firmware ../artifacts/firmware/rockbox.ipod \
+  --disk tmp/ipodhd-rockbox-nano-content-gpt.img \
+  --max-insns 4500000000 --slice-insns 512 --timer-divider 1 \
+  --input "wait:2000000,<14x wheel:4/wait:50000>,wait:100000,select-down,wait:50000,select-up,wait:100000,<28x wheel:4/wait:50000>,wait:100000,select-down,wait:50000,select-up,wait:100000,<5x wheel:4/wait:50000>,wait:100000,select-down,wait:50000,select-up" \
+  --ppm tmp/rb-cube-launch.ppm
+```
+
+```text
+input inject button=select state=down
+input inject button=select state=up
+summary guest_insns=152716800 ticks=8703131 mmio_r=28812144 mmio_w=2307965 lcd_words=396510 disk_reads=81664 irq=923 pc=0x00087d24
+```
+
+`disk_reads` rises from the 78592 boot/menu baseline to 81664 (loading
+`cube.rock` off the FAT filesystem) and `lcd_words` climbs well past the plain
+menu smoke's baseline, confirming real plugin-load I/O and LCD rendering. No
+`invalid memory` or `uc_emu_start ... failed` appeared at any point; the run
+returns cleanly to a normally-rendering root menu afterward (the plugin exits
+almost immediately after launch, most likely because its first input poll
+observes our own launch keypress's release edge as an "any key" exit condition
+— demo plugins commonly treat any button activity as an exit trigger).
+
+This is now a permanent regression test, `smoke_rockbox_plugin_demo`
+(`tests/smoke_rockbox_plugin_demo.cmake`), asserting the disk-read and
+LCD-activity thresholds above plus the absence of any fault/panic string, and
+skipping cleanly if the content-disk fixture is absent.
+
 ## 2026-07-07
 
 Build:

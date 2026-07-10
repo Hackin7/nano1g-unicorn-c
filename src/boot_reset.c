@@ -22,6 +22,26 @@ static void set_arm_reset_regs(n1g_state_t *s, n1g_core_t core, uint32_t entry) 
     n1g_cpu_set_reg(s, core, UC_ARM_REG_PC, entry);
 }
 
+static void set_flash_reset_regs(n1g_state_t *s, n1g_core_t core, uint32_t entry) {
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R0, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R1, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R2, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R3, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R4, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R5, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R6, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R7, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R8, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R9, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R10, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R11, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_R12, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_SP, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_LR, 0);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_CPSR, 0x000000d3u);
+    n1g_cpu_set_reg(s, core, UC_ARM_REG_PC, entry);
+}
+
 bool n1g_boot_reset(n1g_state_t *s) {
     if (s->opts.boot_mode == N1G_BOOT_DIRECT) {
         if (s->opts.firmware_from_disk) {
@@ -37,7 +57,11 @@ bool n1g_boot_reset(n1g_state_t *s) {
                          ? s->opts.entry
                          : (s->opts.boot_mode == N1G_BOOT_FLASH ? N1G_FLASH_BASE : s->opts.load_addr);
     for (int c = 0; c < N1G_CORE_COUNT; c++) {
-        set_arm_reset_regs(s, (n1g_core_t)c, entry);
+        if (s->opts.boot_mode == N1G_BOOT_FLASH) {
+            set_flash_reset_regs(s, (n1g_core_t)c, entry);
+        } else {
+            set_arm_reset_regs(s, (n1g_core_t)c, entry);
+        }
     }
 
     s->cpu[N1G_CORE_COP].halted = true;

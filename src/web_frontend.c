@@ -3,6 +3,7 @@
 #include "nano1g/cpu_unicorn.h"
 #include "nano1g/devices.h"
 #include "nano1g/map.h"
+#include "nano1g/ram.h"
 #include "nano1g/trace.h"
 
 #include <stdio.h>
@@ -60,8 +61,8 @@ static const char index_html[] =
 "</style></head><body><div id=\"container\">"
 "<h1>iPod Nano 1G</h1>"
 "<div id=\"status\">Loading...</div>"
-"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-stage0\">Apple stage0 OS</option><option value=\"apple-direct\">Apple official direct</option><option value=\"rockbox\">Rockbox</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
-"<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
+"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
+"<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>audio</b> <span id=\"audio\">0/0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
 "<div id=\"ipod-container\" tabindex=\"0\">"
 "<div id=\"ipod-body\">"
 "<canvas id=\"ipod-screen\" width=\"176\" height=\"132\"></canvas>"
@@ -81,21 +82,37 @@ static const char index_html[] =
 "const firmware_select=document.getElementById('firmware-select');"
 "const restart_btn=document.getElementById('restart-btn');"
 "const ipod=document.getElementById('ipod-container');"
-"let seq=-1,last_frame=0,wheel_down=false,last_angle=0;"
+"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,guest_insns=0;"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
-"async function restart_selected(){set_status('Restarting '+firmware_select.value+'...');seq=-1;try{const r=await fetch('/control?restart='+encodeURIComponent(firmware_select.value),{cache:'no-store'});if(!r.ok)set_status('Restart failed');}catch(e){set_status('Restart failed: '+e.message);}}"
+"firmware_select.onchange=()=>{select_dirty=true;};"
+"firmware_select.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();restart_selected();}};"
+"async function restart_selected(){set_status('Restarting '+firmware_select.value+'...');seq=-1;select_dirty=false;try{const r=await fetch('/control?restart='+encodeURIComponent(firmware_select.value),{cache:'no-store'});if(!r.ok)set_status('Restart failed');}catch(e){set_status('Restart failed: '+e.message);}}"
 "restart_btn.onclick=e=>{e.preventDefault();restart_selected();};"
 "function button_url(name,state){return '/input?button='+encodeURIComponent(name)+'&state='+state;}"
-"function bind_button(selector,name){const el=document.querySelector(selector);let release_timer=null;"
-"const down=e=>{e.preventDefault();clearTimeout(release_timer);el.classList.add('active');send_input(button_url(name,'down'));};"
-"const up=e=>{e.preventDefault();clearTimeout(release_timer);el.classList.remove('active');release_timer=setTimeout(()=>send_input(button_url(name,'up')),80);};"
-"el.onmousedown=down;el.onmouseup=up;el.onmouseleave=up;el.onpointerdown=down;el.onpointerup=up;el.onpointercancel=up;el.ontouchstart=down;el.ontouchend=up;el.ontouchcancel=up;el.onclick=e=>{down(e);up(e);};}"
+"function tap_url(name){return '/input?button='+encodeURIComponent(name)+'&tap=1';}"
+/* Rockbox needs a minimum guest-instruction span between button down and up
+ * to register a short-press "enter" (roughly 20000-50000 device ticks,
+ * calibrated empirically; see BENCHMARKS.md). Emulator throughput varies a
+ * lot depending on host load, so a fixed wall-clock release delay is not
+ * reliable - instead poll actual guest_insns progress (from the same status
+ * feed driving the FPS/guest counters) and only release once enough
+ * emulated time has genuinely elapsed, with a wall-clock deadline as a
+ * fallback so a button can never get stuck down if the emulator stalls. */
+"const MIN_PRESS_INSNS=20000000;"
+"function release_after_progress(name){const baseline=guest_insns,deadline=performance.now()+5000;"
+"const poll=()=>{if(guest_insns-baseline>=MIN_PRESS_INSNS||performance.now()>deadline){send_input(button_url(name,'up'));}else{setTimeout(poll,40);}};"
+"setTimeout(poll,40);}"
+"function bind_button(selector,name){const el=document.querySelector(selector);let pressed=false;"
+"const down=e=>{e.preventDefault();pressed=true;el.classList.add('active');};"
+"const up=e=>{e.preventDefault();if(!pressed)return;pressed=false;el.classList.remove('active');send_input(tap_url(name));};"
+"el.onpointerdown=down;el.onpointerup=up;el.onpointercancel=up;el.onmouseleave=e=>{if(pressed)up(e);};el.onclick=e=>e.preventDefault();}"
 "bind_button('#ipod-btn-menu','menu');bind_button('#ipod-btn-prev','left');bind_button('#ipod-btn-next','right');bind_button('#ipod-btn-play','play');bind_button('#ipod-btn-select','select');"
 "function key_button(key){switch(key){case'ArrowUp':return'menu';case'ArrowLeft':return'left';case'ArrowRight':return'right';case'ArrowDown':return'play';case'Enter':return'select';default:return null;}}"
-"ipod.onkeydown=e=>{const b=key_button(e.key);if(b){e.preventDefault();send_input(button_url(b,'down'));}};"
-"ipod.onkeyup=e=>{const b=key_button(e.key);if(b){e.preventDefault();send_input(button_url(b,'up'));}};"
+"let key_pressed=null;"
+"ipod.onkeydown=e=>{const b=key_button(e.key);if(b&&key_pressed!==b){e.preventDefault();key_pressed=b;}};"
+"ipod.onkeyup=e=>{const b=key_button(e.key);if(b&&key_pressed===b){e.preventDefault();key_pressed=null;send_input(tap_url(b));}};"
 "const wheel=document.getElementById('ipod-clickwheel');"
 "function wheel_step(delta){send_input('/input?wheel='+(delta<0?'up':'down'));}"
 "wheel.onmousedown=e=>{e.preventDefault();wheel_down=true;};"
@@ -108,7 +125,7 @@ static const char index_html[] =
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
+"guest_insns=s.guest_insns;set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',s.i2s_tx.toLocaleString()+'/'+s.dma_audio_starts.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
 "if(s.frame_seq!==seq){seq=s.frame_seq;draw_frame(seq);}}catch(e){set_status('Offline');text('running','offline');}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -278,20 +295,42 @@ static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len) {
 static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool running) {
     const char *label = s->opts.run_label ? s->opts.run_label : "custom";
     const char *preset = "custom";
-    if (strcmp(label, "Apple stage0 OS") == 0) {
+    if (strcmp(label, "Apple stage0 canary") == 0 ||
+        strcmp(label, "Apple native boot") == 0 ||
+        strcmp(label, "Apple stage0 OS") == 0) {
         preset = "apple-stage0";
-    } else if (strcmp(label, "Apple official direct") == 0) {
+    } else if (strcmp(label, "Apple OS direct diagnostic") == 0 ||
+               strcmp(label, "Apple OS direct (blocked)") == 0 ||
+               strcmp(label, "Apple official direct") == 0) {
         preset = "apple-direct";
+    } else if (strcmp(label, "Apple official boot") == 0 ||
+               strcmp(label, "Apple flash boot") == 0) {
+        preset = "apple-official";
     } else if (strcmp(label, "Rockbox") == 0) {
         preset = "rockbox";
     }
 
-    char body[768];
+    uint32_t opto_front = s->opto.queue_len ? s->opto.queue[s->opto.queue_head] : 0u;
+    char body[16384];
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
                      "\"device_ticks\":%llu,\"lcd_words\":%llu,\"disk_reads\":%llu,"
-                     "\"irq_count\":%llu,\"input_events\":%llu,\"input\":\"%s\","
+                     "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
+                     "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
+                     "\"input_events\":%llu,\"input\":\"%s\","
+                     "\"opto_queue\":%u,\"opto_front\":\"0x%08x\","
+                     "\"opto_buttons\":\"0x%08x\",\"opto_regs04\":\"0x%08x\","
+                     "\"intc_cpu\":\"0x%08x/0x%08x\",\"intc_hi_cpu\":\"0x%08x/0x%08x\","
+                     "\"apple_input_hits\":\"%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\","
+                     "\"apple_input_last\":\"raw=0x%08x buttons=0x%08x wheel=0x%08x lang_kind=0x%08x lang_w30=0x%08x accept=%llu select=%llu\","
+                     "\"apple_input_task_hits\":\"%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\","
+                     "\"apple_input_task_last\":\"wait_id=0x%08x woke_id=0x%08x keypost=0x%08x/0x%08x queue=0x%08x payload=0x%08x ui_kind=0x%08x ui_code=0x%08x\","
+                     "\"apple_key_gate\":\"writes=%llu pc=0x%08x addr=0x%08x size=%u value=0x%08x bytes68=0x%08x bytes6c=0x%08x\","
+                     "\"apple_ui_ready\":\"h=%llu,%llu,%llu,%llu,%llu bytes68=0x%08x bytes6c=0x%08x lr=0x%08x\","
+                     "\"apple_work_pool\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu head=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x branch_obj=0x%08x stale_r1=0x%08x sub=0x%08x handler=0x%08x lr=0x%08x\","
+                     "\"apple_ui_branch\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu obj=0x%08x objw=0x%08x,0x%08x,0x%08x,0x%08x dispatch=0x%08x/0x%08x select=0x%08x/0x%08x accept=0x%08x/0x%08x\","
+                     "\"apple_ui_dispatch\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu obj=0x%08x objw=0x%08x,0x%08x,0x%08x,0x%08x vt=0x%08x,0x%08x,0x%08x,0x%08x objtab=0x%08x/0x%08x lr=0x%08x\","
                      "\"label\":\"%s\",\"preset\":\"%s\","
                      "\"cpu_pc\":\"0x%08x\"}\n",
                      running ? "true" : "false",
@@ -301,8 +340,136 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->counters.lcd_words,
                      (unsigned long long)s->counters.disk_reads,
                      (unsigned long long)s->counters.irq_count,
+                     (unsigned long long)s->i2s.tx_halfwords,
+                     (unsigned long long)s->i2s.tx_drained_halfwords,
+                     (unsigned long long)(s->dma.ch[0].starts + s->dma.ch[1].starts + s->dma.ch[2].starts + s->dma.ch[3].starts),
+                     (unsigned long long)(s->dma.ch[0].completions + s->dma.ch[1].completions + s->dma.ch[2].completions + s->dma.ch[3].completions),
+                     (unsigned long long)(s->dma.ch[0].bytes_pushed + s->dma.ch[1].bytes_pushed + s->dma.ch[2].bytes_pushed + s->dma.ch[3].bytes_pushed),
                      (unsigned long long)s->opto.input_events,
                      s->opto.last_input[0] ? s->opto.last_input : "none",
+                     (unsigned)s->opto.queue_len,
+                     opto_front,
+                     s->opto.button_bits,
+                     s->opto.regs[0x04u / 4u],
+                     s->intc.cpu_status,
+                     s->intc.cpu_enable,
+                     s->intc.hi_cpu_status,
+                     s->intc.hi_cpu_enable,
+                     (unsigned long long)s->counters.apple_input_hits[0],
+                     (unsigned long long)s->counters.apple_input_hits[1],
+                     (unsigned long long)s->counters.apple_input_hits[2],
+                     (unsigned long long)s->counters.apple_input_hits[3],
+                     (unsigned long long)s->counters.apple_input_hits[4],
+                     (unsigned long long)s->counters.apple_input_hits[5],
+                     (unsigned long long)s->counters.apple_input_hits[6],
+                     (unsigned long long)s->counters.apple_input_hits[7],
+                     (unsigned long long)s->counters.apple_input_hits[8],
+                     (unsigned long long)s->counters.apple_input_hits[9],
+                     (unsigned long long)s->counters.apple_input_hits[10],
+                     (unsigned long long)s->counters.apple_input_hits[11],
+                     s->counters.apple_input_last[0][7],
+                     s->counters.apple_input_last[1][5],
+                     s->counters.apple_input_last[1][6],
+                     s->counters.apple_input_last[7][5],
+                     s->counters.apple_input_last[7][7],
+                     (unsigned long long)s->counters.apple_input_hits[9],
+                     (unsigned long long)s->counters.apple_input_hits[10],
+                     (unsigned long long)s->counters.apple_input_task_hits[0],
+                     (unsigned long long)s->counters.apple_input_task_hits[1],
+                     (unsigned long long)s->counters.apple_input_task_hits[2],
+                     (unsigned long long)s->counters.apple_input_task_hits[3],
+                     (unsigned long long)s->counters.apple_input_task_hits[4],
+                     (unsigned long long)s->counters.apple_input_task_hits[5],
+                     (unsigned long long)s->counters.apple_input_task_hits[6],
+                     (unsigned long long)s->counters.apple_input_task_hits[7],
+                     (unsigned long long)s->counters.apple_input_task_hits[8],
+                     (unsigned long long)s->counters.apple_input_task_hits[9],
+                     (unsigned long long)s->counters.apple_input_task_hits[10],
+                     (unsigned long long)s->counters.apple_input_task_hits[11],
+                     (unsigned long long)s->counters.apple_input_task_hits[12],
+                     (unsigned long long)s->counters.apple_input_task_hits[13],
+                     (unsigned long long)s->counters.apple_input_task_hits[14],
+                     (unsigned long long)s->counters.apple_input_task_hits[15],
+                     s->counters.apple_input_task_last[1][1],
+                     s->counters.apple_input_task_last[2][1],
+                     s->counters.apple_input_task_last[3][0],
+                     s->counters.apple_input_task_last[3][1],
+                     s->counters.apple_input_task_last[14][0],
+                     s->counters.apple_input_task_last[14][1],
+                     s->counters.apple_input_task_last[15][6],
+                     s->counters.apple_input_task_last[15][7],
+                     (unsigned long long)s->counters.apple_key_gate_writes,
+                     s->counters.apple_key_gate_last[0],
+                     s->counters.apple_key_gate_last[1],
+                     s->counters.apple_key_gate_last[2],
+                     s->counters.apple_key_gate_last[3],
+                     s->counters.apple_key_gate_last[7],
+                     s->counters.apple_key_gate_bytes,
+                     (unsigned long long)s->counters.apple_ui_ready_hits[0],
+                     (unsigned long long)s->counters.apple_ui_ready_hits[1],
+                     (unsigned long long)s->counters.apple_ui_ready_hits[2],
+                     (unsigned long long)s->counters.apple_ui_ready_hits[3],
+                     (unsigned long long)s->counters.apple_ui_ready_hits[4],
+                     s->counters.apple_ui_ready_bytes68,
+                     s->counters.apple_ui_ready_bytes6c,
+                     s->counters.apple_ui_ready_last[3][7],
+                     (unsigned long long)s->counters.apple_work_pool_hits[0],
+                     (unsigned long long)s->counters.apple_work_pool_hits[1],
+                     (unsigned long long)s->counters.apple_work_pool_hits[2],
+                     (unsigned long long)s->counters.apple_work_pool_hits[3],
+                     (unsigned long long)s->counters.apple_work_pool_hits[4],
+                     (unsigned long long)s->counters.apple_work_pool_hits[5],
+                     (unsigned long long)s->counters.apple_work_pool_hits[6],
+                     (unsigned long long)s->counters.apple_work_pool_hits[7],
+                     s->counters.apple_work_pool_head,
+                     s->counters.apple_work_pool_words[0],
+                     s->counters.apple_work_pool_words[1],
+                     s->counters.apple_work_pool_words[2],
+                     s->counters.apple_work_pool_words[3],
+                     s->counters.apple_work_pool_last[3][0],
+                     s->counters.apple_work_pool_last[3][1],
+                     s->counters.apple_work_pool_last[3][4],
+                     s->counters.apple_work_pool_last[7][3],
+                     s->counters.apple_work_pool_last[3][7],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[0],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[1],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[2],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[3],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[4],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[5],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[6],
+                     (unsigned long long)s->counters.apple_ui_branch_hits[7],
+                     s->counters.apple_ui_branch_last[0][0],
+                     s->counters.apple_ui_branch_words[0][0],
+                     s->counters.apple_ui_branch_words[0][1],
+                     s->counters.apple_ui_branch_words[0][2],
+                     s->counters.apple_ui_branch_words[0][3],
+                     s->counters.apple_ui_branch_last[2][0],
+                     s->counters.apple_ui_branch_last[2][4],
+                     s->counters.apple_ui_branch_words[3][3],
+                     s->counters.apple_ui_branch_last[3][3],
+                     s->counters.apple_ui_branch_words[4][3],
+                     s->counters.apple_ui_branch_last[4][3],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[0],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[1],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[2],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[3],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[4],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[5],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[6],
+                     (unsigned long long)s->counters.apple_ui_dispatch_hits[7],
+                     s->counters.apple_ui_dispatch_last[2][0],
+                     s->counters.apple_ui_dispatch_words[2][0],
+                     s->counters.apple_ui_dispatch_words[2][1],
+                     s->counters.apple_ui_dispatch_words[2][2],
+                     s->counters.apple_ui_dispatch_words[2][3],
+                     s->counters.apple_ui_dispatch_words[2][4],
+                     s->counters.apple_ui_dispatch_words[2][5],
+                     s->counters.apple_ui_dispatch_words[2][6],
+                     s->counters.apple_ui_dispatch_words[2][7],
+                     s->counters.apple_ui_dispatch_last[3][0],
+                     s->counters.apple_ui_dispatch_last[3][1],
+                     s->counters.apple_ui_dispatch_last[3][7],
                      label,
                      preset,
                      n1g_cpu_pc(s, N1G_CORE_CPU));
@@ -314,6 +481,60 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
 
 static bool query_has(const char *query, const char *needle) {
     return query && strstr(query, needle) != NULL;
+}
+
+static bool query_u32(const char *query, const char *key, uint32_t *out) {
+    if (!query || !key || !out) {
+        return false;
+    }
+    const char *p = strstr(query, key);
+    if (!p) {
+        return false;
+    }
+    p += strlen(key);
+    if (*p != '=') {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long value = strtoul(p + 1, &end, 0);
+    if (end == p + 1) {
+        return false;
+    }
+    *out = (uint32_t)value;
+    return true;
+}
+
+static bool send_dump32(n1g_state_t *s, intptr_t fd, const char *query) {
+    uint32_t addr = 0;
+    uint32_t count = 16;
+    if (!query_u32(query, "addr", &addr)) {
+        const char msg[] = "{\"ok\":false,\"error\":\"missing addr\"}\n";
+        return send_response(fd, "400 Bad Request", "application/json", msg, sizeof(msg) - 1u);
+    }
+    (void)query_u32(query, "count", &count);
+    if (count == 0 || count > 64u) {
+        count = 16;
+    }
+
+    char body[2048];
+    int n = snprintf(body, sizeof(body), "{\"addr\":\"0x%08x\",\"words\":[", addr);
+    for (uint32_t i = 0; i < count && n > 0 && (size_t)n < sizeof(body); i++) {
+        uint32_t value = 0;
+        (void)n1g_ram_read(s, addr + i * 4u, 4, &value);
+        n += snprintf(body + n,
+                      sizeof(body) - (size_t)n,
+                      "%s\"0x%08x\"",
+                      i ? "," : "",
+                      value);
+    }
+    if (n > 0 && (size_t)n < sizeof(body)) {
+        n += snprintf(body + n, sizeof(body) - (size_t)n, "]}\n");
+    }
+    if (n <= 0 || (size_t)n >= sizeof(body)) {
+        const char msg[] = "{\"ok\":false,\"error\":\"response too large\"}\n";
+        return send_response(fd, "500 Internal Server Error", "application/json", msg, sizeof(msg) - 1u);
+    }
+    return send_response(fd, "200 OK", "application/json", body, (size_t)n);
 }
 
 static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
@@ -328,7 +549,11 @@ static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
             char key[32];
             (void)snprintf(key, sizeof(key), "button=%s", buttons[i]);
             if (query_has(query, key)) {
-                ok = n1g_dev_opto_button(s, buttons[i], !query_has(query, "state=up"));
+                if (query_has(query, "tap=1")) {
+                    ok = n1g_dev_opto_tap(s, buttons[i], 50000u);
+                } else {
+                    ok = n1g_dev_opto_button(s, buttons[i], !query_has(query, "state=up"));
+                }
                 break;
             }
         }
@@ -345,13 +570,19 @@ static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
 static bool valid_restart_preset(const char *preset) {
     return strcmp(preset, "rockbox") == 0 ||
            strcmp(preset, "apple-direct") == 0 ||
-           strcmp(preset, "apple-stage0") == 0;
+           strcmp(preset, "apple-official") == 0 ||
+           strcmp(preset, "apple-flash") == 0 ||
+           strcmp(preset, "apple-stage0") == 0 ||
+           strcmp(preset, "apple-native") == 0;
 }
 
 static const char *restart_preset_from_query(const char *query) {
     if (query_has(query, "restart=rockbox")) return "rockbox";
     if (query_has(query, "restart=apple-direct")) return "apple-direct";
+    if (query_has(query, "restart=apple-official")) return "apple-official";
+    if (query_has(query, "restart=apple-flash")) return "apple-flash";
     if (query_has(query, "restart=apple-stage0")) return "apple-stage0";
+    if (query_has(query, "restart=apple-native")) return "apple-native";
     return NULL;
 }
 
@@ -401,6 +632,8 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         (void)send_response(fd, "200 OK", "text/html; charset=utf-8", index_html, sizeof(index_html) - 1u);
     } else if (strcmp(path, "/status.json") == 0) {
         (void)send_status(s, web, fd, running);
+    } else if (strcmp(path, "/dump32") == 0) {
+        (void)send_dump32(s, fd, query ? query : "");
     } else if (strcmp(path, "/input") == 0) {
         (void)send_input(s, fd, query ? query : "");
     } else if (strcmp(path, "/control") == 0) {
