@@ -31,7 +31,7 @@ static const char apple_direct_fw[] = "../artifacts/firmware/apple_nano_14.5.3.1
 static const char apple_default_flash_rom[] = "../artifacts/firmware/apple_nano_1g_bootrom.bin";
 static const char apple_disk[] = "../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img";
 static const char rockbox_fw[] = "../artifacts/firmware/rockbox.ipod";
-static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-gpt.img";
+static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-content-gpt.img";
 
 static const char *apple_flash_rom_path(void) {
     const char *env = getenv("NANO1G_APPLE_BOOTROM");
