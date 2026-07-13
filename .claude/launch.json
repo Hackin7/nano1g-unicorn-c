@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nano1g-rockbox-content",
+      "runtimeExecutable": "build-mingw/nano1g.exe",
+      "runtimeArgs": [
+        "--profile", "rockbox",
+        "--firmware", "../artifacts/firmware/rockbox.ipod",
+        "--disk", "tmp/ipodhd-rockbox-nano-content-gpt.img",
+        "--run-forever",
+        "--slice-insns", "512",
+        "--timer-divider", "1",
+        "--battery-percent", "50",
+        "--web", "8099",
+        "--ppm", "tmp/rockbox-live.ppm"
+      ],
+      "port": 8099
+    }
+  ]
+}
