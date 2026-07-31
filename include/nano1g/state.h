@@ -94,6 +94,14 @@ typedef struct n1g_disk {
     uint8_t status;
     uint32_t ide0_cfg;
     uint32_t ide1_cfg;
+    bool irq_pending;
+    uint8_t device_control;
+    uint32_t dma_control;
+    uint32_t dma_status;
+    uint32_t dma_length;
+    uint32_t dma_addr;
+    uint32_t dma_unknown;
+    bool dma_pending;
     uint8_t transfer_kind;
     uint16_t data_index;
     uint8_t identify[512];
@@ -171,6 +179,17 @@ typedef struct n1g_i2s {
     uint64_t tx_halfwords; /* total halfwords accepted (diagnostics) */
     uint64_t tx_drained_halfwords;
 } n1g_i2s_t;
+
+typedef struct n1g_serial_channel {
+    uint8_t ier, fcr, lcr, mcr, lsr, msr, spr, dll, dlm;
+    uint8_t extended[0x20];
+    bool thre_irq_pending;
+    uint64_t tx_bytes;
+} n1g_serial_channel_t;
+
+typedef struct n1g_serial {
+    n1g_serial_channel_t channel[2];
+} n1g_serial_t;
 
 typedef struct n1g_gpio {
     uint32_t regs[0xa00 / 4];
@@ -321,6 +340,7 @@ typedef struct n1g_state {
     n1g_gpio_t gpio;
     n1g_i2c_t i2c;
     n1g_i2s_t i2s;
+    n1g_serial_t serial;
     n1g_opto_t opto;
     n1g_usb_t usb;
     n1g_lcd2_t lcd2;

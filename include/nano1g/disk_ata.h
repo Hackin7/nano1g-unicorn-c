@@ -6,6 +6,7 @@
 bool n1g_disk_load(n1g_state_t *s, const char *path);
 bool n1g_disk_save(n1g_state_t *s, const char *path);
 void n1g_disk_destroy(n1g_state_t *s);
+void n1g_disk_tick(n1g_state_t *s);
 uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 

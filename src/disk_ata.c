@@ -1,6 +1,7 @@
 #include "nano1g/disk_ata.h"
 
 #include "nano1g/firmware.h"
+#include "nano1g/ram.h"
 #include "nano1g/trace.h"
 
 #include <stdio.h>
@@ -21,6 +22,10 @@
 #define ATA_CMD_READ_MULTIPLE 0xc4u
 #define ATA_CMD_WRITE_MULTIPLE 0xc5u
 #define ATA_CMD_SET_MULTIPLE_MODE 0xc6u
+#define ATA_CMD_READ_DMA 0xc8u
+#define ATA_CMD_READ_DMA_NO_RETRY 0xc9u
+#define ATA_CMD_WRITE_DMA 0xcau
+#define ATA_CMD_WRITE_DMA_NO_RETRY 0xcbu
 #define ATA_CMD_STANDBY_IMMEDIATE 0xe0u
 #define ATA_CMD_FLUSH_CACHE 0xe7u
 #define ATA_CMD_SET_FEATURES 0xefu
@@ -38,11 +43,21 @@
 #define PP_IDE1_CFG 0x2cu
 #define PP_ATA_ALT_STATUS 0x3f8u
 
+#define PP_IDE_DMA_CONTROL 0x400u
+#define PP_IDE_DMA_STATUS 0x404u
+#define PP_IDE_DMA_LENGTH 0x408u
+#define PP_IDE_DMA_ADDR 0x40cu
+#define PP_IDE_DMA_UNKNOWN 0x410u
+#define PP5020_IDE_IRQ_BIT (1u << 23)
+#define ATA_DEVCTL_NIEN 0x02u
+
 typedef enum n1g_ata_transfer {
     N1G_ATA_TRANSFER_NONE = 0,
     N1G_ATA_TRANSFER_IDENTIFY = 1,
     N1G_ATA_TRANSFER_READ = 2,
-    N1G_ATA_TRANSFER_WRITE = 3
+    N1G_ATA_TRANSFER_WRITE = 3,
+    N1G_ATA_TRANSFER_DMA_READ = 4,
+    N1G_ATA_TRANSFER_DMA_WRITE = 5
 } n1g_ata_transfer_t;
 
 static void set_word(uint8_t *buf, uint32_t index, uint16_t value) {
@@ -52,6 +67,17 @@ static void set_word(uint8_t *buf, uint32_t index, uint16_t value) {
 
 static uint16_t get_word(const uint8_t *buf, uint32_t index) {
     return (uint16_t)(buf[index * 2u] | ((uint16_t)buf[index * 2u + 1u] << 8));
+}
+
+static void set_ide_irq(n1g_state_t *s, bool pending) {
+    s->disk.irq_pending = pending;
+    if (pending && (s->disk.device_control & ATA_DEVCTL_NIEN) == 0) {
+        s->intc.cpu_status |= PP5020_IDE_IRQ_BIT;
+        s->intc.cop_status |= PP5020_IDE_IRQ_BIT;
+    } else {
+        s->intc.cpu_status &= ~PP5020_IDE_IRQ_BIT;
+        s->intc.cop_status &= ~PP5020_IDE_IRQ_BIT;
+    }
 }
 
 static void set_ata_string(uint8_t *buf, uint32_t word_index, uint32_t word_count, const char *text) {
@@ -116,14 +142,15 @@ static void finish_transfer(n1g_state_t *s) {
     s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 0;
+    set_ide_irq(s, true);
 }
 
 bool n1g_disk_load(n1g_state_t *s, const char *path) {
     if (!path) {
         build_identify(s);
         s->disk.status = ATA_DRDY;
-        s->disk.ide0_cfg = 0x08u;
-        s->disk.ide1_cfg = 0x08u;
+        s->disk.ide0_cfg = 0;
+        s->disk.ide1_cfg = 0;
         return true;
     }
     if (!n1g_read_file(path, &s->disk.data, &s->disk.size)) {
@@ -132,8 +159,8 @@ bool n1g_disk_load(n1g_state_t *s, const char *path) {
     }
     build_identify(s);
     s->disk.status = ATA_DRDY;
-    s->disk.ide0_cfg = 0x08u;
-    s->disk.ide1_cfg = 0x08u;
+    s->disk.ide0_cfg = 0;
+    s->disk.ide1_cfg = 0;
     n1g_info(s, "loaded disk %s size=%zu", path, s->disk.size);
     return true;
 }
@@ -187,6 +214,8 @@ static uint16_t read_sector_word(n1g_state_t *s) {
         }
         if (s->disk.sectors_remaining == 0) {
             finish_transfer(s);
+        } else {
+            set_ide_irq(s, true);
         }
     }
     return out;
@@ -208,6 +237,8 @@ static void write_sector_word(n1g_state_t *s, uint16_t value) {
         }
         if (s->disk.sectors_remaining == 0) {
             finish_transfer(s);
+        } else {
+            set_ide_irq(s, true);
         }
     }
 }
@@ -258,6 +289,7 @@ static void start_identify(n1g_state_t *s) {
     s->disk.sectors_remaining = 1;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_IDENTIFY;
     s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
+    set_ide_irq(s, true);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata identify sectors=%u word5_sector_bytes=%u status=0x%02x",
@@ -275,6 +307,7 @@ static void start_read(n1g_state_t *s) {
     s->disk.data_index = 0;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_READ;
     s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
+    set_ide_irq(s, true);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata read cmd=0x%02x lba=%u count=%u first_word=0x%04x status=0x%02x",
@@ -294,6 +327,7 @@ static void start_write(n1g_state_t *s) {
     s->disk.data_index = 0;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_WRITE;
     s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
+    set_ide_irq(s, true);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata write cmd=0x%02x lba=%u count=%u status=0x%02x",
@@ -304,6 +338,98 @@ static void start_write(n1g_state_t *s) {
     }
 }
 
+
+static void schedule_dma(n1g_state_t *s) {
+    s->disk.dma_pending =
+        (s->disk.dma_control & 1u) != 0 &&
+        (s->disk.transfer_kind == N1G_ATA_TRANSFER_DMA_READ ||
+         s->disk.transfer_kind == N1G_ATA_TRANSFER_DMA_WRITE);
+}
+
+static void complete_dma_transfer(n1g_state_t *s) {
+    if ((s->disk.dma_control & 1u) == 0 ||
+        (s->disk.transfer_kind != N1G_ATA_TRANSFER_DMA_READ &&
+         s->disk.transfer_kind != N1G_ATA_TRANSFER_DMA_WRITE)) {
+        return;
+    }
+    s->disk.dma_pending = false;
+
+    size_t bytes = (size_t)s->disk.dma_length + 4u;
+    size_t available = (size_t)s->disk.sectors_remaining * 512u - s->disk.data_index;
+    if (bytes > available) {
+        bytes = available;
+    }
+
+    uint8_t *ram = n1g_ram_ptr(s, s->disk.dma_addr, bytes);
+    size_t disk_off = (size_t)s->disk.transfer_lba * 512u + s->disk.data_index;
+    if (!ram || bytes == 0) {
+        s->disk.dma_status = 1;
+        s->disk.error = 0x04u;
+        s->disk.status = ATA_DRDY | ATA_ERR;
+        s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
+        set_ide_irq(s, true);
+        return;
+    }
+
+    if (s->disk.transfer_kind == N1G_ATA_TRANSFER_DMA_READ) {
+        size_t copied = 0;
+        if (s->disk.data && disk_off < s->disk.size) {
+            copied = s->disk.size - disk_off;
+            if (copied > bytes) {
+                copied = bytes;
+            }
+            memcpy(ram, s->disk.data + disk_off, copied);
+        }
+        if (copied < bytes) {
+            memset(ram + copied, 0xff, bytes - copied);
+        }
+        s->counters.disk_reads += (bytes + 1u) / 2u;
+    } else if (s->disk.data && disk_off < s->disk.size) {
+        size_t copied = s->disk.size - disk_off;
+        if (copied > bytes) {
+            copied = bytes;
+        }
+        memcpy(s->disk.data + disk_off, ram, copied);
+        s->counters.disk_writes += (copied + 1u) / 2u;
+    }
+
+    s->disk.dma_addr += (uint32_t)bytes;
+    s->disk.dma_length = 0;
+    s->disk.dma_status = 0;
+    s->disk.dma_control &= ~0x80000000u;
+
+    size_t total = (size_t)s->disk.data_index + bytes;
+    uint32_t sectors_done = (uint32_t)(total / 512u);
+    s->disk.data_index = (uint16_t)(total % 512u);
+    s->disk.transfer_lba += sectors_done;
+    if (sectors_done >= s->disk.sectors_remaining) {
+        s->disk.sectors_remaining = 0;
+    } else {
+        s->disk.sectors_remaining -= (uint16_t)sectors_done;
+    }
+
+    if (s->disk.sectors_remaining == 0) {
+        finish_transfer(s);
+    }
+}
+
+static void start_dma(n1g_state_t *s, bool write) {
+    uint16_t count = s->disk.sector_count == 0 ? 256u : s->disk.sector_count;
+    s->disk.error = 0;
+    s->disk.transfer_lba = s->disk.selected_lba;
+    s->disk.sectors_remaining = count;
+    s->disk.data_index = 0;
+    s->disk.transfer_kind = write ? N1G_ATA_TRANSFER_DMA_WRITE : N1G_ATA_TRANSFER_DMA_READ;
+    s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
+    set_ide_irq(s, false);
+    schedule_dma(s);
+}
+void n1g_disk_tick(n1g_state_t *s) {
+    if (s->disk.dma_pending) {
+        complete_dma_transfer(s);
+    }
+}
+
 static void complete_nondata_command(n1g_state_t *s) {
     uint8_t feature = s->disk.error;
     s->disk.error = 0;
@@ -311,6 +437,7 @@ static void complete_nondata_command(n1g_state_t *s) {
     s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 0;
+    set_ide_irq(s, true);
     if (s->opts.verbose) {
         n1g_info(s, "ata command complete cmd=0x%02x feature=0x%02x count=%u lba=%u status=0x%02x",
                  s->disk.command,
@@ -359,13 +486,28 @@ static bool normalize_taskfile_offset(uint32_t offset, uint32_t *out) {
 uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     uint32_t reg = 0;
     if (offset == PP_IDE0_CFG) {
-        return s->disk.ide0_cfg;
+        return (s->disk.ide0_cfg & ~0x18u) | (s->disk.irq_pending ? 0x18u : 0u);
     }
     if (offset == PP_IDE1_CFG) {
         return s->disk.ide1_cfg;
     }
     if (offset == PP_ATA_ALT_STATUS) {
         return s->disk.status;
+    }
+    if (offset == PP_IDE_DMA_CONTROL) {
+        return s->disk.dma_control;
+    }
+    if (offset == PP_IDE_DMA_STATUS) {
+        return s->disk.dma_status;
+    }
+    if (offset == PP_IDE_DMA_LENGTH) {
+        return s->disk.dma_length;
+    }
+    if (offset == PP_IDE_DMA_ADDR) {
+        return s->disk.dma_addr;
+    }
+    if (offset == PP_IDE_DMA_UNKNOWN) {
+        return s->disk.dma_unknown;
     }
     if (!normalize_taskfile_offset(offset, &reg)) {
         return 0;
@@ -386,8 +528,11 @@ uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
         return (s->disk.selected_lba >> 16) & 0xffu;
     case 0x18:
         return s->disk.device;
-    case 0x1c:
-        return s->disk.status;
+    case 0x1c: {
+        uint8_t status = s->disk.status;
+        set_ide_irq(s, false);
+        return status;
+    }
     default:
         return 0;
     }
@@ -396,7 +541,10 @@ uint32_t n1g_disk_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
 void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value) {
     uint32_t reg = 0;
     if (offset == PP_IDE0_CFG) {
-        s->disk.ide0_cfg = value | 0x08u;
+        if ((value & 0x18u) != 0) {
+            set_ide_irq(s, false);
+        }
+        s->disk.ide0_cfg = value & ~0x18u;
         return;
     }
     if (offset == PP_IDE1_CFG) {
@@ -404,6 +552,29 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
         return;
     }
     if (offset == PP_ATA_ALT_STATUS) {
+        s->disk.device_control = (uint8_t)value;
+        set_ide_irq(s, s->disk.irq_pending);
+        return;
+    }
+    if (offset == PP_IDE_DMA_CONTROL) {
+        s->disk.dma_control = value;
+        schedule_dma(s);
+        return;
+    }
+    if (offset == PP_IDE_DMA_STATUS) {
+        s->disk.dma_status = value;
+        return;
+    }
+    if (offset == PP_IDE_DMA_LENGTH) {
+        s->disk.dma_length = value;
+        return;
+    }
+    if (offset == PP_IDE_DMA_ADDR) {
+        s->disk.dma_addr = value;
+        return;
+    }
+    if (offset == PP_IDE_DMA_UNKNOWN) {
+        s->disk.dma_unknown = value;
         return;
     }
     if (!normalize_taskfile_offset(offset, &reg)) {
@@ -445,6 +616,12 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
                    s->disk.command == ATA_CMD_WRITE_SECTORS_EXT ||
                    s->disk.command == ATA_CMD_WRITE_MULTIPLE) {
             start_write(s);
+        } else if (s->disk.command == ATA_CMD_READ_DMA ||
+                   s->disk.command == ATA_CMD_READ_DMA_NO_RETRY) {
+            start_dma(s, false);
+        } else if (s->disk.command == ATA_CMD_WRITE_DMA ||
+                   s->disk.command == ATA_CMD_WRITE_DMA_NO_RETRY) {
+            start_dma(s, true);
         } else if (s->disk.command == ATA_CMD_SET_FEATURES ||
                    s->disk.command == ATA_CMD_SET_MULTIPLE_MODE ||
                    s->disk.command == ATA_CMD_STANDBY_IMMEDIATE ||
@@ -454,6 +631,7 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
             s->disk.error = 0x04u;
             s->disk.status = ATA_DRDY | ATA_ERR;
             s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
+            set_ide_irq(s, true);
             if (s->opts.verbose) {
                 n1g_info(s, "ata unsupported cmd=0x%02x lba=%u count=%u status=0x%02x",
                          s->disk.command,

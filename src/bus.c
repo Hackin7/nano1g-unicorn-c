@@ -103,6 +103,12 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         return n1g_dev_i2c_read(s, addr - N1G_I2C_BASE, size);
     }
+    if (addr >= N1G_SERIAL0_BASE && addr < N1G_SERIAL0_BASE + 0x40) {
+        return n1g_dev_serial_read(s, 0, addr - N1G_SERIAL0_BASE, size);
+    }
+    if (addr >= N1G_SERIAL1_BASE && addr < N1G_SERIAL1_BASE + 0x40) {
+        return n1g_dev_serial_read(s, 1, addr - N1G_SERIAL1_BASE, size);
+    }
     if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) {
         return n1g_dev_opto_read(s, addr - N1G_OPTO_BASE, size);
     }
@@ -154,6 +160,10 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_i2s_write(s, addr - N1G_I2S_BASE, size, value);
     } else if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         n1g_dev_i2c_write(s, addr - N1G_I2C_BASE, size, value);
+    } else if (addr >= N1G_SERIAL0_BASE && addr < N1G_SERIAL0_BASE + 0x40) {
+        n1g_dev_serial_write(s, 0, addr - N1G_SERIAL0_BASE, size, value);
+    } else if (addr >= N1G_SERIAL1_BASE && addr < N1G_SERIAL1_BASE + 0x40) {
+        n1g_dev_serial_write(s, 1, addr - N1G_SERIAL1_BASE, size, value);
     } else if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) {
         n1g_dev_opto_write(s, addr - N1G_OPTO_BASE, size, value);
     } else if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) {
@@ -177,6 +187,8 @@ void n1g_bus_tick(n1g_state_t *s) {
     n1g_dev_timer_tick(s);
     n1g_dev_i2s_tick(s);
     n1g_dev_dma_tick(s);
+    n1g_dev_serial_tick(s);
     n1g_dev_cpucon_tick(s);
+    n1g_disk_tick(s);
     n1g_dev_intc_tick(s);
 }

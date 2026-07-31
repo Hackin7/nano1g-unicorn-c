@@ -55,6 +55,7 @@ set(NANO1G_SOURCES
   src/dev_gpio.c
   src/dev_i2c.c
   src/dev_i2s.c
+  src/dev_serial.c
   src/dev_opto.c
   src/dev_usb.c
   src/dev_lcd2.c
@@ -209,6 +210,20 @@ if(BUILD_TESTING)
     endif()
   endif()
   add_test(NAME intc_forced_unit COMMAND intc_forced_unit)
+
+  add_executable(serial_unit
+    tests/test_serial.c
+    src/dev_serial.c
+  )
+  target_include_directories(serial_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(serial_unit PRIVATE /W4)
+    else()
+      target_compile_options(serial_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME serial_unit COMMAND serial_unit)
 
   add_executable(timer_scaled_unit
     tests/test_timer_scaled.c
@@ -407,6 +422,18 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_ata_write.cmake)
+    add_test(NAME smoke_ata_irq
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_ata_irq.cmake)
+    add_test(NAME smoke_ata_dma
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_ata_dma.cmake)
     add_test(NAME smoke_dma_lcd
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>

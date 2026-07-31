@@ -1813,6 +1813,18 @@ static void hook_mem_write(uc_engine *uc,
     uint32_t addr = (uint32_t)address;
     uint32_t val = (uint32_t)value;
 
+    if (addr < 0x10706150u && addr + (uint32_t)size > 0x1070613cu) {
+        static uint32_t accessory_state_logs;
+        if (accessory_state_logs < 128u) {
+            uint32_t pc = 0;
+            uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+            accessory_state_logs++;
+            n1g_log(s,
+                    "apple accessory-state write pc=0x%08x addr=0x%08x size=%d value=0x%08x count=%u",
+                    pc, addr, size, val, accessory_state_logs);
+        }
+    }
+
     if (addr < N1G_FLASH_SIZE) {
         const char *cmd = flash_command_name(val);
         bool should_log = false;

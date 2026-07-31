@@ -2,6 +2,7 @@ build/
 build-*/
 .deps/
 tmp/
+.claude/worktrees/
 *.exe
 *.dll
 *.o
