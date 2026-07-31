@@ -43,5 +43,7 @@
 
 #define N1G_LCD_W 176u
 #define N1G_LCD_H 132u
+/* Apple fills four controller rows below the visible panel. */
+#define N1G_LCD_GRAM_H 136u
 
 #endif

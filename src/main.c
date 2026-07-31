@@ -555,12 +555,14 @@ run_image:
         n1g_info(&s, "%s", line);
     }
     n1g_info(&s,
-             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
+             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu lcd_gram=%llu lcd_block=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
              (unsigned long long)s.counters.guest_insns,
              (unsigned long long)s.counters.device_ticks,
              (unsigned long long)s.counters.mmio_reads,
              (unsigned long long)s.counters.mmio_writes,
              (unsigned long long)s.counters.lcd_words,
+             (unsigned long long)s.lcd2.gram_pixels,
+             (unsigned long long)s.lcd2.block_pixels,
              (unsigned long long)s.counters.disk_reads,
              (unsigned long long)s.counters.disk_writes,
              (unsigned long long)s.counters.irq_count,
@@ -580,6 +582,19 @@ run_image:
              s.cpucon.ctl[N1G_CORE_COP],
              (unsigned long long)s.cpu[N1G_CORE_CPU].guest_insns,
              (unsigned long long)s.cpu[N1G_CORE_COP].guest_insns);
+    n1g_info(&s,
+             "lcd_state window=%u,%u-%u,%u cursor=%u,%u block_starts=%llu last_block_cursor=%u,%u cursor_sets=%llu window_sets=%llu",
+             s.lcd2.window_x0,
+             s.lcd2.window_y0,
+             s.lcd2.window_x1,
+             s.lcd2.window_y1,
+             s.lcd2.cursor_x,
+             s.lcd2.cursor_y,
+             (unsigned long long)s.lcd2.block_starts,
+             s.lcd2.last_block_cursor_x,
+             s.lcd2.last_block_cursor_y,
+             (unsigned long long)s.lcd2.cursor_sets,
+             (unsigned long long)s.lcd2.window_sets);
     if (s.opts.profile == N1G_PROFILE_APPLE) {
         uint32_t active = read32_or_zero(&s, 0x10705b48u);
         uint32_t queue_slot = read32_or_zero(&s, 0x10743194u);

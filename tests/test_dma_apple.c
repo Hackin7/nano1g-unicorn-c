@@ -14,12 +14,22 @@
 #define APPLE_DMA_ACTIVE2_HEAD 0x1070be1cu
 #define APPLE_DMA_MANAGER_SERVICE2 52u
 
+#define LCD_CNTL_RAM_ADDR_SET       0x21u
+#define LCD_CNTL_HORIZ_RAM_ADDR_POS 0x44u
+#define LCD_CNTL_VERT_RAM_ADDR_POS  0x45u
+
 static int expect_true(bool cond, const char *message) {
     if (!cond) {
         fprintf(stderr, "%s\n", message);
         return 1;
     }
     return 0;
+}
+
+static void lcd_command_data(n1g_state_t *s, uint16_t command, uint16_t data) {
+    n1g_dev_lcd2_write(s, 0x0cu, 4, 0x80000000u | command);
+    n1g_dev_lcd2_write(s, 0x0cu, 4, 0x81000000u | (data >> 8u));
+    n1g_dev_lcd2_write(s, 0x0cu, 4, 0x81000000u | (data & 0xffu));
 }
 
 int main(void) {
@@ -67,6 +77,8 @@ int main(void) {
                     "Apple LCD DMA request configuration did not remain armed") ||
         expect_true(s.counters.lcd_words == 4u,
                     "Apple LCD DMA transferred the wrong word count") ||
+        expect_true(s.lcd2.block_pixels == 8u,
+                    "Apple LCD DMA counted the wrong number of block pixels") ||
         expect_true(s.lcd2.block_pixels_remaining == 0u,
                     "Apple LCD2 block did not complete") ||
         expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) != 0u,
@@ -88,6 +100,33 @@ int main(void) {
                     "Apple linked DMA completion status was not latched") ||
         expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) == 0u,
                     "Apple linked DMA IRQ 26 was not acknowledged");
+
+    memset(&s.lcd2, 0, sizeof(s.lcd2));
+    lcd_command_data(&s, LCD_CNTL_HORIZ_RAM_ADDR_POS, 0xaf00u);
+    lcd_command_data(&s, LCD_CNTL_VERT_RAM_ADDR_POS, 0x8700u);
+    lcd_command_data(&s, LCD_CNTL_RAM_ADDR_SET, 0x0000u);
+    n1g_dev_lcd2_write(&s, 0x24u, 4, 0x0001baffu);
+    n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
+
+    const uint32_t full_gram_words = N1G_LCD_W * N1G_LCD_GRAM_H / 2u;
+    for (uint32_t i = 0; i < full_gram_words; i++) {
+        uint32_t word = 0x33333333u;
+        if (i == 0u) word = 0x22221111u;
+        if (i == full_gram_words - 1u) word = 0x44443333u;
+        n1g_dev_lcd2_write(&s, 0x100u, 4, word);
+    }
+
+    failed = failed ||
+        expect_true(s.lcd2.window_y1 == N1G_LCD_GRAM_H - 1u,
+                    "Apple LCD window was clamped to the visible panel") ||
+        expect_true(s.lcd2.block_pixels_remaining == 0u,
+                    "Apple full-GRAM transfer did not complete") ||
+        expect_true(s.lcd2.pixels[0] == 0x1111u && s.lcd2.pixels[1] == 0x2222u,
+                    "Apple hidden rows wrapped over the top of the visible panel") ||
+        expect_true(s.lcd2.pixels[N1G_LCD_W * N1G_LCD_H] == 0x3333u,
+                    "Apple first hidden GRAM row was not retained") ||
+        expect_true(s.lcd2.pixels[N1G_LCD_W * N1G_LCD_GRAM_H - 1u] == 0x4444u,
+                    "Apple final hidden GRAM pixel was not retained");
 
     n1g_ram_destroy(&s);
     return failed ? 1 : 0;

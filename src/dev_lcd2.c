@@ -51,21 +51,21 @@ static uint16_t swap16(uint16_t value) {
 static void lcd2_clamp_window(n1g_state_t *s) {
     if (s->lcd2.window_x0 >= N1G_LCD_W) s->lcd2.window_x0 = (uint8_t)(N1G_LCD_W - 1u);
     if (s->lcd2.window_x1 >= N1G_LCD_W) s->lcd2.window_x1 = (uint8_t)(N1G_LCD_W - 1u);
-    if (s->lcd2.window_y0 >= N1G_LCD_H) s->lcd2.window_y0 = (uint8_t)(N1G_LCD_H - 1u);
-    if (s->lcd2.window_y1 >= N1G_LCD_H) s->lcd2.window_y1 = (uint8_t)(N1G_LCD_H - 1u);
+    if (s->lcd2.window_y0 >= N1G_LCD_GRAM_H) s->lcd2.window_y0 = (uint8_t)(N1G_LCD_GRAM_H - 1u);
+    if (s->lcd2.window_y1 >= N1G_LCD_GRAM_H) s->lcd2.window_y1 = (uint8_t)(N1G_LCD_GRAM_H - 1u);
     if (s->lcd2.window_x1 < s->lcd2.window_x0) s->lcd2.window_x1 = s->lcd2.window_x0;
     if (s->lcd2.window_y1 < s->lcd2.window_y0) s->lcd2.window_y1 = s->lcd2.window_y0;
 }
 
 static void lcd2_set_cursor(n1g_state_t *s, uint8_t x, uint8_t y) {
     s->lcd2.cursor_x = x >= N1G_LCD_W ? (uint8_t)(N1G_LCD_W - 1u) : x;
-    s->lcd2.cursor_y = y >= N1G_LCD_H ? (uint8_t)(N1G_LCD_H - 1u) : y;
+    s->lcd2.cursor_y = y >= N1G_LCD_GRAM_H ? (uint8_t)(N1G_LCD_GRAM_H - 1u) : y;
     s->lcd2.cursor = (uint32_t)s->lcd2.cursor_y * N1G_LCD_W + s->lcd2.cursor_x;
 }
 
 static void lcd2_push_pixel(n1g_state_t *s, uint16_t pixel) {
     lcd2_init_window(s);
-    if (s->lcd2.cursor_x < N1G_LCD_W && s->lcd2.cursor_y < N1G_LCD_H) {
+    if (s->lcd2.cursor_x < N1G_LCD_W && s->lcd2.cursor_y < N1G_LCD_GRAM_H) {
         s->lcd2.pixels[(uint32_t)s->lcd2.cursor_y * N1G_LCD_W + s->lcd2.cursor_x] = pixel;
     }
 
@@ -73,7 +73,7 @@ static void lcd2_push_pixel(n1g_state_t *s, uint16_t pixel) {
     if (s->lcd2.cursor_x > s->lcd2.window_x1 || s->lcd2.cursor_x >= N1G_LCD_W) {
         s->lcd2.cursor_x = s->lcd2.window_x0;
         s->lcd2.cursor_y++;
-        if (s->lcd2.cursor_y > s->lcd2.window_y1 || s->lcd2.cursor_y >= N1G_LCD_H) {
+        if (s->lcd2.cursor_y > s->lcd2.window_y1 || s->lcd2.cursor_y >= N1G_LCD_GRAM_H) {
             s->lcd2.cursor_y = s->lcd2.window_y0;
         }
     }
@@ -90,20 +90,34 @@ static void lcd2_handle_command_data(n1g_state_t *s, uint16_t value) {
     lcd2_init_window(s);
     switch (s->lcd2.command) {
     case LCD_CNTL_HORIZ_RAM_ADDR_POS:
+        n1g_log(s,
+                "lcd window horizontal raw=0x%04x x0=%u x1=%u",
+                value,
+                (unsigned)(value & 0xffu),
+                (unsigned)(value >> 8u));
         s->lcd2.window_x0 = (uint8_t)(value & 0xffu);
         s->lcd2.window_x1 = (uint8_t)(value >> 8u);
+        s->lcd2.window_sets++;
         lcd2_clamp_window(s);
         break;
     case LCD_CNTL_VERT_RAM_ADDR_POS:
+        n1g_log(s,
+                "lcd window vertical raw=0x%04x y0=%u y1=%u",
+                value,
+                (unsigned)(value & 0xffu),
+                (unsigned)(value >> 8u));
         s->lcd2.window_y0 = (uint8_t)(value & 0xffu);
         s->lcd2.window_y1 = (uint8_t)(value >> 8u);
+        s->lcd2.window_sets++;
         lcd2_clamp_window(s);
         break;
     case LCD_CNTL_RAM_ADDR_SET:
         lcd2_set_cursor(s, (uint8_t)(value & 0xffu), (uint8_t)(value >> 8u));
+        s->lcd2.cursor_sets++;
         break;
     case LCD_CNTL_WRITE_TO_GRAM:
         lcd2_push_pixel(s, swap16(value));
+        s->lcd2.gram_pixels++;
         lcd2_count_word(s);
         break;
     default:
@@ -140,9 +154,29 @@ static void lcd2_write_port(n1g_state_t *s, uint32_t value) {
 
 static void lcd2_start_block(n1g_state_t *s) {
     lcd2_init_window(s);
+    s->lcd2.block_starts++;
+    s->lcd2.last_block_cursor_x = s->lcd2.cursor_x;
+    s->lcd2.last_block_cursor_y = s->lcd2.cursor_y;
     s->lcd2.block_ctrl &= ~LCD2_BLOCK_READY;
     s->lcd2.block_ctrl |= LCD2_BLOCK_TXOK;
     s->lcd2.block_pixels_remaining = ((s->lcd2.block_config & 0xffffu) + 1u) / 2u;
+    if (s->lcd2.block_starts <= 64u) {
+        uint32_t window_pixels =
+            ((uint32_t)s->lcd2.window_x1 - s->lcd2.window_x0 + 1u) *
+            ((uint32_t)s->lcd2.window_y1 - s->lcd2.window_y0 + 1u);
+        n1g_log(s,
+                "lcd block start=%llu window=%u,%u-%u,%u cursor=%u,%u pixels=%u window_pixels=%u config=0x%08x",
+                (unsigned long long)s->lcd2.block_starts,
+                s->lcd2.window_x0,
+                s->lcd2.window_y0,
+                s->lcd2.window_x1,
+                s->lcd2.window_y1,
+                s->lcd2.cursor_x,
+                s->lcd2.cursor_y,
+                s->lcd2.block_pixels_remaining,
+                window_pixels,
+                s->lcd2.block_config);
+    }
 }
 
 static void lcd2_finish_block_if_done(n1g_state_t *s) {
@@ -158,16 +192,19 @@ static void lcd2_push_block_word(n1g_state_t *s, uint32_t value) {
     if (s->lcd2.block_pixels_remaining == 0) {
         lcd2_push_pixel(s, first);
         lcd2_push_pixel(s, second);
+        s->lcd2.block_pixels += 2u;
         lcd2_count_word(s);
         return;
     }
 
     if (s->lcd2.block_pixels_remaining > 0) {
         lcd2_push_pixel(s, first);
+        s->lcd2.block_pixels++;
         s->lcd2.block_pixels_remaining--;
     }
     if (s->lcd2.block_pixels_remaining > 0) {
         lcd2_push_pixel(s, second);
+        s->lcd2.block_pixels++;
         s->lcd2.block_pixels_remaining--;
     }
     lcd2_count_word(s);

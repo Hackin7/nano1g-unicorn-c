@@ -227,7 +227,7 @@ typedef struct n1g_usb {
 
 typedef struct n1g_lcd2 {
     uint32_t regs[0x200 / 4];
-    uint16_t pixels[N1G_LCD_W * N1G_LCD_H];
+    uint16_t pixels[N1G_LCD_W * N1G_LCD_GRAM_H];
     uint32_t cursor;
     uint32_t block_ctrl;
     uint32_t block_config;
@@ -243,6 +243,13 @@ typedef struct n1g_lcd2 {
     bool pending_command;
     bool pending_data;
     uint64_t words;
+    uint64_t gram_pixels;
+    uint64_t block_pixels;
+    uint64_t block_starts;
+    uint64_t cursor_sets;
+    uint64_t window_sets;
+    uint8_t last_block_cursor_x;
+    uint8_t last_block_cursor_y;
     bool dirty;
 } n1g_lcd2_t;
 
