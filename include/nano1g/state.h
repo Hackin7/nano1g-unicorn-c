@@ -36,6 +36,7 @@ typedef struct n1g_opts {
     const char *firmware_path;
     const char *flash_path;
     const char *disk_path;
+    const char *disk_out_path;
     const char *ppm_path;
     const char *input_script;
     uint32_t battery_percent;
@@ -261,6 +262,7 @@ typedef struct n1g_counters {
     uint64_t mmio_writes;
     uint64_t lcd_words;
     uint64_t disk_reads;
+    uint64_t disk_writes;
     uint64_t irq_count;
     uint64_t apple_pc_hits[10];
     uint64_t apple_ui_hits[16];

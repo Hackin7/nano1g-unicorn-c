@@ -2133,16 +2133,17 @@ static bool add_code_hook(n1g_state_t *s, uc_engine *uc, uint32_t begin, uint32_
 static void hook_probe_pc(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {
     (void)size;
     n1g_state_t *s = (n1g_state_t *)user_data;
-    uint32_t r[6] = {0};
-    static const int regs[6] = {UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
-                                UC_ARM_REG_R3, UC_ARM_REG_LR, UC_ARM_REG_SP};
-    for (int i = 0; i < 6; i++) {
+    uint32_t r[7] = {0};
+    static const int regs[7] = {UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
+                                UC_ARM_REG_R3, UC_ARM_REG_R12, UC_ARM_REG_LR,
+                                UC_ARM_REG_SP};
+    for (int i = 0; i < 7; i++) {
         uc_reg_read(uc, regs[i], &r[i]);
     }
     n1g_info(s,
-             "probe pc=0x%08x r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x lr=0x%08x sp=0x%08x ticks=%llu",
+             "probe pc=0x%08x r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r12=0x%08x lr=0x%08x sp=0x%08x ticks=%llu",
              (uint32_t)address,
-             r[0], r[1], r[2], r[3], r[4], r[5],
+             r[0], r[1], r[2], r[3], r[4], r[5], r[6],
              (unsigned long long)s->counters.device_ticks);
 }
 

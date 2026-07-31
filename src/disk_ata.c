@@ -3,6 +3,7 @@
 #include "nano1g/firmware.h"
 #include "nano1g/trace.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -137,6 +138,24 @@ bool n1g_disk_load(n1g_state_t *s, const char *path) {
     return true;
 }
 
+bool n1g_disk_save(n1g_state_t *s, const char *path) {
+    if (!path || !s->disk.data || s->disk.size == 0) {
+        return false;
+    }
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return false;
+    }
+    bool ok = fwrite(s->disk.data, 1, s->disk.size, f) == s->disk.size;
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (ok) {
+        n1g_info(s, "saved disk %s size=%zu", path, s->disk.size);
+    }
+    return ok;
+}
+
 void n1g_disk_destroy(n1g_state_t *s) {
     free(s->disk.data);
     s->disk.data = NULL;
@@ -178,6 +197,7 @@ static void write_sector_word(n1g_state_t *s, uint16_t value) {
     if (s->disk.data && off + 1u < s->disk.size) {
         s->disk.data[off] = (uint8_t)(value & 0xffu);
         s->disk.data[off + 1u] = (uint8_t)(value >> 8);
+        s->counters.disk_writes++;
     }
     s->disk.data_index += 2u;
     if (s->disk.data_index >= 512u) {

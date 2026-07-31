@@ -42,7 +42,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset);
 
 static void usage(void) {
     puts("nano1g [--run rockbox|apple-stage0|apple-direct|apple-official|apple-flash]");
-    puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--ppm PATH]");
+    puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--disk-out PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
     puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
@@ -106,6 +106,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.flash_path = argv[++i];
         } else if (strcmp(a, "--disk") == 0 && i + 1 < argc) {
             opts.disk_path = argv[++i];
+        } else if (strcmp(a, "--disk-out") == 0 && i + 1 < argc) {
+            opts.disk_out_path = argv[++i];
         } else if (strcmp(a, "--ppm") == 0 && i + 1 < argc) {
             opts.ppm_path = argv[++i];
         } else if (strcmp(a, "--max-insns") == 0 && i + 1 < argc) {
@@ -553,13 +555,14 @@ run_image:
         n1g_info(&s, "%s", line);
     }
     n1g_info(&s,
-             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu disk_reads=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
+             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
              (unsigned long long)s.counters.guest_insns,
              (unsigned long long)s.counters.device_ticks,
              (unsigned long long)s.counters.mmio_reads,
              (unsigned long long)s.counters.mmio_writes,
              (unsigned long long)s.counters.lcd_words,
              (unsigned long long)s.counters.disk_reads,
+             (unsigned long long)s.counters.disk_writes,
              (unsigned long long)s.counters.irq_count,
              n1g_cpu_pc(&s, N1G_CORE_CPU),
              (unsigned long long)s.i2s.tx_halfwords,
@@ -962,6 +965,10 @@ run_image:
             }
             n1g_web_sleep_ms(16);
         }
+    }
+    if (s.opts.disk_out_path && !n1g_disk_save(&s, s.opts.disk_out_path)) {
+        n1g_info(&s, "failed to save disk %s", s.opts.disk_out_path);
+        exit_code = 1;
     }
     n1g_web_stop(&web);
     if (state_active) {
