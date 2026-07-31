@@ -106,12 +106,14 @@ typedef struct n1g_intc {
     uint32_t cop_enable;
     uint32_t cpu_priority;
     uint32_t cop_priority;
+    uint32_t forced_status;
     uint32_t hi_cpu_status;
     uint32_t hi_cop_status;
     uint32_t hi_cpu_enable;
     uint32_t hi_cop_enable;
     uint32_t hi_cpu_priority;
     uint32_t hi_cop_priority;
+    uint32_t hi_forced_status;
 } n1g_intc_t;
 
 typedef struct n1g_mailbox {

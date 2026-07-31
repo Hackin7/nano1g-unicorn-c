@@ -5,8 +5,18 @@
 
 #define CPUCON_SLEEP_BITS 0xe0000000u
 
-static uint32_t intc_hi_summary(n1g_state_t *s, n1g_core_t core) {
+static uint32_t intc_lo_status(n1g_state_t *s, n1g_core_t core) {
+    uint32_t status = core == N1G_CORE_CPU ? s->intc.cpu_status : s->intc.cop_status;
+    return status | s->intc.forced_status;
+}
+
+static uint32_t intc_hi_status(n1g_state_t *s, n1g_core_t core) {
     uint32_t status = core == N1G_CORE_CPU ? s->intc.hi_cpu_status : s->intc.hi_cop_status;
+    return status | s->intc.hi_forced_status;
+}
+
+static uint32_t intc_hi_summary(n1g_state_t *s, n1g_core_t core) {
+    uint32_t status = intc_hi_status(s, core);
     return status != 0 ? (1u << 30) : 0;
 }
 
@@ -23,26 +33,26 @@ static uint32_t read_part(uint32_t value, uint32_t offset, uint32_t size) {
 
 static bool intc_irq_pending(n1g_state_t *s, n1g_core_t core) {
     if (core == N1G_CORE_CPU) {
-        uint32_t lo = s->intc.cpu_status & s->intc.cpu_enable & ~s->intc.cpu_priority;
-        uint32_t hi = s->intc.hi_cpu_status & s->intc.hi_cpu_enable & ~s->intc.hi_cpu_priority;
+        uint32_t lo = intc_lo_status(s, core) & s->intc.cpu_enable & ~s->intc.cpu_priority;
+        uint32_t hi = intc_hi_status(s, core) & s->intc.hi_cpu_enable & ~s->intc.hi_cpu_priority;
         return lo != 0 || ((s->intc.cpu_enable & (1u << 30)) && hi != 0);
     }
 
-    uint32_t lo = s->intc.cop_status & s->intc.cop_enable & ~s->intc.cop_priority;
-    uint32_t hi = s->intc.hi_cop_status & s->intc.hi_cop_enable & ~s->intc.hi_cop_priority;
+    uint32_t lo = intc_lo_status(s, core) & s->intc.cop_enable & ~s->intc.cop_priority;
+    uint32_t hi = intc_hi_status(s, core) & s->intc.hi_cop_enable & ~s->intc.hi_cop_priority;
     return lo != 0 || ((s->intc.cop_enable & (1u << 30)) && hi != 0);
 }
 
 /* INT_PRIORITY routes an enabled, pending source to FIQ instead of IRQ. */
 static bool intc_fiq_pending(n1g_state_t *s, n1g_core_t core) {
     if (core == N1G_CORE_CPU) {
-        uint32_t lo = s->intc.cpu_status & s->intc.cpu_enable & s->intc.cpu_priority;
-        uint32_t hi = s->intc.hi_cpu_status & s->intc.hi_cpu_enable & s->intc.hi_cpu_priority;
+        uint32_t lo = intc_lo_status(s, core) & s->intc.cpu_enable & s->intc.cpu_priority;
+        uint32_t hi = intc_hi_status(s, core) & s->intc.hi_cpu_enable & s->intc.hi_cpu_priority;
         return lo != 0 || hi != 0;
     }
 
-    uint32_t lo = s->intc.cop_status & s->intc.cop_enable & s->intc.cop_priority;
-    uint32_t hi = s->intc.hi_cop_status & s->intc.hi_cop_enable & s->intc.hi_cop_priority;
+    uint32_t lo = intc_lo_status(s, core) & s->intc.cop_enable & s->intc.cop_priority;
+    uint32_t hi = intc_hi_status(s, core) & s->intc.hi_cop_enable & s->intc.hi_cop_priority;
     return lo != 0 || hi != 0;
 }
 
@@ -50,19 +60,19 @@ uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     uint32_t aligned = offset & ~3u;
     uint32_t value = 0;
     switch (aligned) {
-    case 0x000: value = s->intc.cpu_status | intc_hi_summary(s, N1G_CORE_CPU); break;
-    case 0x004: value = s->intc.cop_status | intc_hi_summary(s, N1G_CORE_COP); break;
+    case 0x000: value = intc_lo_status(s, N1G_CORE_CPU) | intc_hi_summary(s, N1G_CORE_CPU); break;
+    case 0x004: value = intc_lo_status(s, N1G_CORE_COP) | intc_hi_summary(s, N1G_CORE_COP); break;
     case 0x008:
-        value = s->intc.cpu_status & s->intc.cpu_enable & s->intc.cpu_priority;
+        value = intc_lo_status(s, N1G_CORE_CPU) & s->intc.cpu_enable & s->intc.cpu_priority;
         break;
     case 0x00c:
-        value = s->intc.cop_status & s->intc.cop_enable & s->intc.cop_priority;
+        value = intc_lo_status(s, N1G_CORE_COP) & s->intc.cop_enable & s->intc.cop_priority;
         break;
     case 0x010:
-        value = s->intc.cpu_status | s->intc.cop_status |
+        value = intc_lo_status(s, N1G_CORE_CPU) | intc_lo_status(s, N1G_CORE_COP) |
                intc_hi_summary(s, N1G_CORE_CPU) | intc_hi_summary(s, N1G_CORE_COP);
         break;
-    case 0x014: value = 0; break;
+    case 0x014: value = s->intc.forced_status; break;
     case 0x020: value = s->intc.cpu_enable; break;
     case 0x024: value = s->intc.cpu_enable; break;
     case 0x028: value = s->intc.cpu_enable; break;
@@ -71,12 +81,12 @@ uint32_t n1g_dev_intc_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     case 0x034: value = s->intc.cop_enable; break;
     case 0x038: value = s->intc.cop_enable; break;
     case 0x03c: value = s->intc.cop_priority; break;
-    case 0x100: value = s->intc.hi_cpu_status; break;
-    case 0x104: value = s->intc.hi_cop_status; break;
+    case 0x100: value = intc_hi_status(s, N1G_CORE_CPU); break;
+    case 0x104: value = intc_hi_status(s, N1G_CORE_COP); break;
     case 0x108: value = 0; break;
     case 0x10c: value = 0; break;
-    case 0x110: value = s->intc.hi_cpu_status | s->intc.hi_cop_status; break;
-    case 0x114: value = 0; break;
+    case 0x110: value = intc_hi_status(s, N1G_CORE_CPU) | intc_hi_status(s, N1G_CORE_COP); break;
+    case 0x114: value = s->intc.hi_forced_status; break;
     case 0x120: value = s->intc.hi_cpu_enable; break;
     case 0x124: value = s->intc.hi_cpu_enable; break;
     case 0x128: value = s->intc.hi_cpu_enable; break;
@@ -111,6 +121,8 @@ void n1g_dev_intc_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
         }
     }
     switch (offset) {
+    case 0x018: s->intc.forced_status |= value; break;
+    case 0x01c: s->intc.forced_status &= ~value; break;
     case 0x024: s->intc.cpu_enable |= value; break;
     case 0x028: s->intc.cpu_enable &= ~value; break;
     case 0x02c:
@@ -120,6 +132,8 @@ void n1g_dev_intc_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
     case 0x034: s->intc.cop_enable |= value; break;
     case 0x038: s->intc.cop_enable &= ~value; break;
     case 0x03c: s->intc.cop_priority = value; break;
+    case 0x118: s->intc.hi_forced_status |= value; break;
+    case 0x11c: s->intc.hi_forced_status &= ~value; break;
     case 0x124: s->intc.hi_cpu_enable |= value; break;
     case 0x128: s->intc.hi_cpu_enable &= ~value; break;
     case 0x12c: s->intc.hi_cpu_priority = value; break;

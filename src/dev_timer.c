@@ -67,26 +67,35 @@ void n1g_dev_timer_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_
 
 void n1g_dev_timer_tick(n1g_state_t *s) {
     s->timer.usec += s->opts.rtc_usec_per_tick;
-    s->timer.cfg_tick_phase = (s->timer.cfg_tick_phase + 1u) % s->opts.timer_divider;
-    if (s->timer.cfg_tick_phase != 0u) {
+
+    uint64_t elapsed = (uint64_t)s->timer.cfg_tick_phase + s->opts.rtc_usec_per_tick;
+    uint32_t steps = (uint32_t)(elapsed / s->opts.timer_divider);
+    s->timer.cfg_tick_phase = (uint32_t)(elapsed % s->opts.timer_divider);
+    if (steps == 0u) {
         return;
     }
+
     for (int i = 0; i < 2; i++) {
         uint32_t counter = s->timer.cfg[i] & 0x1fffffffu;
         bool repeat = (s->timer.cfg[i] & 0x40000000u) != 0;
         bool enabled = (s->timer.cfg[i] & 0x80000000u) != 0;
 
-        if (enabled && counter != 0 && s->timer.val[i] != 0) {
-            s->timer.val[i]--;
-            if (s->timer.val[i] == 0) {
-                s->intc.cpu_status |= (1u << i);
-                s->intc.cop_status |= (1u << i);
-                if (repeat) {
-                    s->timer.val[i] = counter;
-                } else {
-                    s->timer.cfg[i] &= ~0x80000000u;
-                }
-            }
+        if (!enabled || counter == 0u || s->timer.val[i] == 0u) {
+            continue;
+        }
+        if (steps < s->timer.val[i]) {
+            s->timer.val[i] -= steps;
+            continue;
+        }
+
+        s->intc.cpu_status |= 1u << i;
+        s->intc.cop_status |= 1u << i;
+        if (repeat) {
+            uint32_t residual = (steps - s->timer.val[i]) % counter;
+            s->timer.val[i] = residual == 0u ? counter : counter - residual;
+        } else {
+            s->timer.val[i] = 0;
+            s->timer.cfg[i] &= ~0x80000000u;
         }
     }
 }

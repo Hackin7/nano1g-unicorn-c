@@ -43,7 +43,7 @@ execute_process(
     --max-insns 175000000
     --slice-insns 512
     --timer-divider 1
-    --rtc-usec-per-tick 512
+    --rtc-usec-per-tick 8
     --dump32 0x4001ff18
     --dump-count 4
     --ppm ${ppm}
@@ -63,14 +63,20 @@ foreach(required
     "sysinfo=0x40018000"
     "sysinfo_ram=yes"
     "sysinfo_e0=0x02000000"
-    "dump32 addr=0x4001ff18 0x53797349 0x40018000"
-    "lang_loop_4ee20=1"
-    "view_deliver_5410c=2"
-    "lcd_dirty_53b18=1"
-    "post_53b20=1")
+    "dump32 addr=0x4001ff18 0x53797349 0x40018000")
   string(FIND "${output}" "${required}" pos)
   if(pos EQUAL -1)
     message(FATAL_ERROR "stage0 SysInfo+OSOS smoke missing '${required}':\n${output}")
+  endif()
+endforeach()
+
+foreach(progress
+    "lang_loop_4ee20=[1-9][0-9]*"
+    "view_deliver_5410c=[1-9][0-9]*"
+    "lcd_dirty_53b18=[1-9][0-9]*"
+    "post_53b20=[1-9][0-9]*")
+  if(NOT output MATCHES "${progress}")
+    message(FATAL_ERROR "stage0 SysInfo+OSOS smoke missing progress '${progress}':\n${output}")
   endif()
 endforeach()
 

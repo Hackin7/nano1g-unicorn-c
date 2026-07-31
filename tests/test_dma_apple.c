@@ -1,0 +1,94 @@
+#include "nano1g/devices.h"
+#include "nano1g/map.h"
+#include "nano1g/ram.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#define DMA_CH_BASE 0x1000u
+#define DMA_CMD_WAIT_REQ (1u << 24)
+#define DMA_STATUS_INTR (1u << 30)
+#define APPLE_DMA_IRQ_BIT (1u << 26)
+#define APPLE_DMA_MANAGER_PTR 0x10705ba0u
+#define APPLE_DMA_ACTIVE2_HEAD 0x1070be1cu
+#define APPLE_DMA_MANAGER_SERVICE2 52u
+
+static int expect_true(bool cond, const char *message) {
+    if (!cond) {
+        fprintf(stderr, "%s\n", message);
+        return 1;
+    }
+    return 0;
+}
+
+int main(void) {
+    n1g_state_t s;
+    memset(&s, 0, sizeof(s));
+    s.opts.profile = N1G_PROFILE_APPLE;
+
+    if (!n1g_ram_init(&s)) {
+        fprintf(stderr, "failed to allocate RAM\n");
+        return 1;
+    }
+
+    const uint32_t src = N1G_SDRAM_BASE + 0x2000u;
+    const uint32_t manager = 0x10710000u;
+    const uint32_t service = 0x10711000u;
+    const uint32_t record = service + 16u;
+    for (uint32_t i = 0; i < 4u; i++) {
+        (void)n1g_ram_write(&s, src + i * 4u, 4, 0x12340000u + i);
+    }
+    (void)n1g_ram_write(&s, APPLE_DMA_MANAGER_PTR, 4, manager);
+    (void)n1g_ram_write(&s, manager + APPLE_DMA_MANAGER_SERVICE2, 4, service);
+    (void)n1g_ram_write(&s, service, 4, 0x00504cd8u);
+    (void)n1g_ram_write(&s, service + 188u, 4, record);
+    (void)n1g_ram_write(&s, record + 64u, 4, manager);
+    (void)n1g_ram_write(&s, record + 84u, 1, 0u);
+    (void)n1g_ram_write(&s, APPLE_DMA_ACTIVE2_HEAD, 4, 0u);
+
+    n1g_dev_dma_write(&s, DMA_CH_BASE + 0x10u, 4, src);
+    n1g_dev_dma_write(&s, DMA_CH_BASE + 0x18u, 4, N1G_LCD2_BASE + 0x100u);
+    n1g_dev_dma_write(&s, DMA_CH_BASE, 4,
+                      DMA_CMD_WAIT_REQ | (16u - 4u));
+    n1g_dev_dma_tick(&s);
+    int failed = expect_true(s.counters.lcd_words == 0u,
+                             "Apple LCD DMA ran before an LCD2 block request");
+
+    n1g_dev_lcd2_write(&s, 0x24u, 4, 0xc0010000u | (16u - 1u));
+    n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
+    failed = failed || expect_true(s.counters.lcd_words == 0u,
+                             "Apple LCD DMA completed synchronously");
+    n1g_dev_dma_tick(&s);
+
+    uint32_t command = n1g_dev_dma_read(&s, DMA_CH_BASE, 4);
+    failed = failed ||
+        expect_true((command & DMA_CMD_WAIT_REQ) != 0u,
+                    "Apple LCD DMA request configuration did not remain armed") ||
+        expect_true(s.counters.lcd_words == 4u,
+                    "Apple LCD DMA transferred the wrong word count") ||
+        expect_true(s.lcd2.block_pixels_remaining == 0u,
+                    "Apple LCD2 block did not complete") ||
+        expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) != 0u,
+                    "Apple linked DMA service did not assert IRQ 26");
+
+    uint32_t active_head = 0;
+    uint32_t linked = 0;
+    (void)n1g_ram_read(&s, APPLE_DMA_ACTIVE2_HEAD, 4, &active_head);
+    (void)n1g_ram_read(&s, record + 84u, 1, &linked);
+    failed = failed ||
+        expect_true(active_head == record,
+                    "Apple DMA service was not linked to controller 2") ||
+        expect_true(linked == 1u,
+                    "Apple DMA transfer record was not marked linked");
+
+    uint32_t status = n1g_dev_dma_read(&s, DMA_CH_BASE + 0x04u, 4);
+    failed = failed ||
+        expect_true((status & DMA_STATUS_INTR) != 0u,
+                    "Apple linked DMA completion status was not latched") ||
+        expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) == 0u,
+                    "Apple linked DMA IRQ 26 was not acknowledged");
+
+    n1g_ram_destroy(&s);
+    return failed ? 1 : 0;
+}

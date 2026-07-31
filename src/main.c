@@ -261,7 +261,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
         opts->max_insns = 175000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;
-        opts->rtc_usec_per_tick = 512;
+        opts->rtc_usec_per_tick = 8;
         opts->load_addr = N1G_FASTRAM_BASE;
         opts->entry = N1G_FASTRAM_BASE;
         opts->entry_set = true;
@@ -281,7 +281,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
         opts->max_insns = 175000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;
-        opts->rtc_usec_per_tick = 512;
+        opts->rtc_usec_per_tick = 8;
         opts->virtual_memmap = true;
     } else {
         opts->run_label = rockbox_label;
@@ -584,7 +584,7 @@ run_image:
         uint32_t active = read32_or_zero(&s, 0x10705b48u);
         uint32_t queue_slot = read32_or_zero(&s, 0x10743194u);
         n1g_info(&s,
-                "apple_pc_hist plateau_24dxx=%llu event_2a=%llu ui_483xx=%llu audio_99dxx=%llu mp3_c8cxx=%llu event_cb_1526xx=%llu task_1bdxx=%llu fs_1c42xx=%llu other_fw=%llu other=%llu",
+                "apple_pc_hist plateau_24dxx=%llu event_2a=%llu ui_483xx=%llu timers_99dxx=%llu mp3_c8cxx=%llu event_cb_1526xx=%llu task_1bdxx=%llu fs_1c42xx=%llu other_fw=%llu other=%llu",
                 (unsigned long long)s.counters.apple_pc_hits[0],
                 (unsigned long long)s.counters.apple_pc_hits[1],
                 (unsigned long long)s.counters.apple_pc_hits[2],

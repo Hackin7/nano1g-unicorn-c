@@ -178,6 +178,52 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME audio_path_unit COMMAND audio_path_unit)
 
+  add_executable(dma_apple_unit
+    tests/test_dma_apple.c
+    src/dev_dma.c
+    src/dev_lcd2.c
+    src/dev_i2s.c
+    src/ram.c
+    src/trace.c
+  )
+  target_include_directories(dma_apple_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(dma_apple_unit PRIVATE /W4)
+    else()
+      target_compile_options(dma_apple_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME dma_apple_unit COMMAND dma_apple_unit)
+
+  add_executable(intc_forced_unit
+    tests/test_intc_forced.c
+    src/dev_intc.c
+  )
+  target_include_directories(intc_forced_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(intc_forced_unit PRIVATE /W4)
+    else()
+      target_compile_options(intc_forced_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME intc_forced_unit COMMAND intc_forced_unit)
+
+  add_executable(timer_scaled_unit
+    tests/test_timer_scaled.c
+    src/dev_timer.c
+  )
+  target_include_directories(timer_scaled_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(timer_scaled_unit PRIVATE /W4)
+    else()
+      target_compile_options(timer_scaled_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME timer_scaled_unit COMMAND timer_scaled_unit)
+
   add_test(NAME smoke_args COMMAND $<TARGET_FILE:nano1g> --help)
 
   find_package(Python3 COMPONENTS Interpreter QUIET)
