@@ -315,7 +315,9 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
-                     "\"device_ticks\":%llu,\"lcd_words\":%llu,\"disk_reads\":%llu,"
+                     "\"device_ticks\":%llu,\"lcd_words\":%llu,\"lcd_gram\":%llu,"
+                     "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
+                     "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,"
                      "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
                      "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
                      "\"input_events\":%llu,\"input\":\"%s\","
@@ -338,6 +340,12 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->counters.guest_insns,
                      (unsigned long long)s->counters.device_ticks,
                      (unsigned long long)s->counters.lcd_words,
+                     (unsigned long long)s->lcd2.gram_pixels,
+                     (unsigned long long)s->lcd2.block_pixels,
+                     (unsigned long long)s->lcd2.block_overrun_words,
+                     (unsigned long long)s->lcd2.block_starts,
+                     (unsigned long long)(s->dma.lcd_transfers[0] + s->dma.lcd_transfers[1] +
+                                          s->dma.lcd_transfers[2] + s->dma.lcd_transfers[3]),
                      (unsigned long long)s->counters.disk_reads,
                      (unsigned long long)s->counters.irq_count,
                      (unsigned long long)s->i2s.tx_halfwords,

@@ -159,6 +159,8 @@ typedef struct n1g_memcon {
 
 typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
+    bool lcd_request_armed[4];
+    uint64_t lcd_transfers[4];
     /* Rockbox-style peripheral-paced channel engine (RAM -> IIS FIFO). */
     struct {
         uint32_t cur_addr;
@@ -246,6 +248,7 @@ typedef struct n1g_lcd2 {
     uint64_t gram_pixels;
     uint64_t block_pixels;
     uint64_t block_starts;
+    uint64_t block_overrun_words;
     uint64_t cursor_sets;
     uint64_t window_sets;
     uint8_t last_block_cursor_x;

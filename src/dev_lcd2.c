@@ -189,6 +189,20 @@ static void lcd2_push_block_word(n1g_state_t *s, uint32_t value) {
     uint16_t first = (uint16_t)(value & 0xffffu);
     uint16_t second = (uint16_t)(value >> 16u);
 
+    if (s->lcd2.block_pixels_remaining == 0 &&
+        s->opts.profile == N1G_PROFILE_APPLE) {
+        s->lcd2.block_overrun_words++;
+        if (s->lcd2.block_overrun_words <= 16u) {
+            n1g_log(s,
+                    "lcd block overrun word=%llu value=0x%08x cursor=%u,%u",
+                    (unsigned long long)s->lcd2.block_overrun_words,
+                    value,
+                    s->lcd2.cursor_x,
+                    s->lcd2.cursor_y);
+        }
+        return;
+    }
+
     if (s->lcd2.block_pixels_remaining == 0) {
         lcd2_push_pixel(s, first);
         lcd2_push_pixel(s, second);

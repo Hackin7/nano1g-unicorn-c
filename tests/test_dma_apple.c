@@ -81,6 +81,10 @@ int main(void) {
                     "Apple LCD DMA counted the wrong number of block pixels") ||
         expect_true(s.lcd2.block_pixels_remaining == 0u,
                     "Apple LCD2 block did not complete") ||
+        expect_true(!s.dma.lcd_request_armed[0],
+                    "Apple LCD DMA request remained armed after completion") ||
+        expect_true(s.dma.lcd_transfers[0] == 1u,
+                    "Apple LCD DMA transfer count was incorrect") ||
         expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) != 0u,
                     "Apple linked DMA service did not assert IRQ 26");
 
@@ -101,6 +105,38 @@ int main(void) {
         expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) == 0u,
                     "Apple linked DMA IRQ 26 was not acknowledged");
 
+    uint64_t words_after_completion = s.counters.lcd_words;
+    n1g_dev_lcd2_write(&s, 0x24u, 4, 0xc0010000u | (16u - 1u));
+    n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
+    n1g_dev_dma_tick(&s);
+    failed = failed ||
+        expect_true(s.counters.lcd_words == words_after_completion,
+                    "Apple LCD DMA replayed a completed descriptor") ||
+        expect_true(s.dma.lcd_transfers[0] == 1u,
+                    "Apple LCD DMA counted a stale descriptor replay");
+
+    n1g_dev_dma_write(&s, DMA_CH_BASE, 4,
+                      DMA_CMD_WAIT_REQ | (16u - 4u));
+    n1g_dev_lcd2_write(&s, 0x24u, 4, 3u);
+    n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
+    n1g_dev_dma_tick(&s);
+    failed = failed ||
+        expect_true(s.counters.lcd_words == words_after_completion,
+                    "Apple LCD DMA ran against a mismatched setup block") ||
+        expect_true(s.dma.lcd_request_armed[0],
+                    "Apple LCD DMA disarmed while waiting for the real block");
+
+    n1g_dev_lcd2_write(&s, 0x24u, 4, 16u - 1u);
+    n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
+    n1g_dev_dma_tick(&s);
+    failed = failed ||
+        expect_true(s.counters.lcd_words == words_after_completion + 4u,
+                    "Apple LCD DMA did not run when block and descriptor matched") ||
+        expect_true(!s.dma.lcd_request_armed[0],
+                    "Apple LCD DMA remained armed after the deferred transfer") ||
+        expect_true(s.dma.lcd_transfers[0] == 2u,
+                    "Apple deferred LCD DMA transfer count was incorrect");
+
     memset(&s.lcd2, 0, sizeof(s.lcd2));
     lcd_command_data(&s, LCD_CNTL_HORIZ_RAM_ADDR_POS, 0xaf00u);
     lcd_command_data(&s, LCD_CNTL_VERT_RAM_ADDR_POS, 0x8700u);
@@ -115,6 +151,7 @@ int main(void) {
         if (i == full_gram_words - 1u) word = 0x44443333u;
         n1g_dev_lcd2_write(&s, 0x100u, 4, word);
     }
+    n1g_dev_lcd2_write(&s, 0x100u, 4, 0x66665555u);
 
     failed = failed ||
         expect_true(s.lcd2.window_y1 == N1G_LCD_GRAM_H - 1u,
@@ -126,7 +163,11 @@ int main(void) {
         expect_true(s.lcd2.pixels[N1G_LCD_W * N1G_LCD_H] == 0x3333u,
                     "Apple first hidden GRAM row was not retained") ||
         expect_true(s.lcd2.pixels[N1G_LCD_W * N1G_LCD_GRAM_H - 1u] == 0x4444u,
-                    "Apple final hidden GRAM pixel was not retained");
+                    "Apple final hidden GRAM pixel was not retained") ||
+        expect_true(s.lcd2.pixels[0] == 0x1111u,
+                    "LCD block overrun overwrote the window origin") ||
+        expect_true(s.lcd2.block_overrun_words == 1u,
+                    "LCD block overrun was not counted");
 
     n1g_ram_destroy(&s);
     return failed ? 1 : 0;

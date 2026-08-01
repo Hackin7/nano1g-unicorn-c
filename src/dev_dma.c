@@ -199,8 +199,13 @@ static void dma_try_lcd_transfer(n1g_state_t *s, uint32_t channel) {
     }
     /* Apple's LCD path arms DMA without CMD_START. LCD2 block mode supplies
      * the peripheral request when BLOCK_CTRL enters its start state. */
-    if (apple_request && s->lcd2.block_pixels_remaining == 0u) {
-        return;
+    if (apple_request) {
+        if (!s->dma.lcd_request_armed[channel] ||
+            s->lcd2.block_pixels_remaining == 0u ||
+            s->lcd2.block_pixels_remaining != byte_count / 2u) {
+            return;
+        }
+        s->dma.lcd_request_armed[channel] = false;
     }
 
     bool firmware_dispatch = false;
@@ -221,6 +226,7 @@ static void dma_try_lcd_transfer(n1g_state_t *s, uint32_t channel) {
         }
         n1g_dev_lcd2_write(s, per_addr - N1G_LCD2_BASE, 4, word);
     }
+    s->dma.lcd_transfers[channel]++;
 
     if (!apple_request) {
         s->dma.regs[(base + 0x00u) / 4u] = cmd & ~LCD_DMA_WAIT_REQ;
@@ -269,6 +275,10 @@ void n1g_dev_dma_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
             uint32_t channel = (offset - DMA_CH_BASE) / DMA_CH_STRIDE;
             if ((offset % DMA_CH_STRIDE) == 0x00u) {
                 audio_ch_command(s, channel, value);
+                if (s->opts.profile == N1G_PROFILE_APPLE) {
+                    s->dma.lcd_request_armed[channel] =
+                        (value & LCD_DMA_WAIT_REQ) != 0u;
+                }
             }
             if (s->opts.profile != N1G_PROFILE_APPLE) {
                 dma_try_lcd_transfer(s, channel);
