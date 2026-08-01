@@ -164,6 +164,7 @@ if(BUILD_TESTING)
   add_executable(audio_path_unit
     tests/test_audio_path.c
     src/dev_i2s.c
+    src/dev_i2c.c
     src/dev_dma.c
     src/dev_lcd2.c
     src/ram.c

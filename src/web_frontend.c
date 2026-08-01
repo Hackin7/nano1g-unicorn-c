@@ -42,6 +42,7 @@ static const char index_html[] =
 "#firmware-bar{align-items:center;display:flex;gap:8px;justify-content:center;margin:12px 0;font-size:14px}"
 "#firmware-select{margin-left:6px}"
 "#restart-btn{border:1px solid #c6cbd1;background:#fff;border-radius:4px;padding:4px 9px;color:#24292f}"
+"#audio-control{align-items:center;display:flex;gap:4px}"
 "#stats{align-items:center;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}"
 "#stats span{white-space:nowrap}"
 "#ipod-container{transform:scale(1.8);transform-origin:top center;height:720px}"
@@ -62,7 +63,7 @@ static const char index_html[] =
 "</style></head><body><div id=\"container\">"
 "<h1>iPod Nano 1G</h1>"
 "<div id=\"status\">Loading...</div>"
-"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option><option value=\"ipodlinux\">iPod Linux (experimental)</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
+"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option><option value=\"ipodlinux\">iPod Linux (experimental)</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button><label id=\"audio-control\"><input id=\"audio-enable\" type=\"checkbox\">Audio</label></div>"
 "<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>audio</b> <span id=\"audio\">0/0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
 "<div id=\"ipod-container\" tabindex=\"0\">"
 "<div id=\"ipod-body\">"
@@ -82,8 +83,9 @@ static const char index_html[] =
 "const status_el=document.getElementById('status');"
 "const firmware_select=document.getElementById('firmware-select');"
 "const restart_btn=document.getElementById('restart-btn');"
+"const audio_enable=document.getElementById('audio-enable');"
 "const ipod=document.getElementById('ipod-container');"
-"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false;"
+"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_polling=false;"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
@@ -111,9 +113,12 @@ static const char index_html[] =
 "let d=a-last_angle;if(d>180)d-=360;if(d<-180)d+=360;if(Math.abs(d)>10){wheel_step(d);last_angle=a;}};"
 "wheel.onwheel=e=>{e.preventDefault();wheel_step(e.deltaY);};"
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
+"function read_u64(v,o){return v.getUint32(o,true)+v.getUint32(o+4,true)*4294967296;}"
+"async function pump_audio(){if(!audio_enable.checked||!audio_ctx||audio_polling||audio_next-audio_ctx.currentTime>.2)return;audio_polling=true;try{const r=await fetch('/audio.pcm?cursor='+Math.floor(audio_cursor),{cache:'no-store'});const b=await r.arrayBuffer();if(b.byteLength<32)return;const v=new DataView(b);if(v.getUint32(0,true)!==0x3141314e)return;const rate=v.getUint32(4,true),start=read_u64(v,8),next=read_u64(v,16),count=v.getUint32(24,true);audio_cursor=next;if(count<2||b.byteLength<32+count*2)return;const frames=Math.floor(count/2),ab=audio_ctx.createBuffer(2,frames,rate),l=ab.getChannelData(0),rr=ab.getChannelData(1),pcm=new DataView(b,32);for(let i=0;i<frames;i++){l[i]=pcm.getInt16(i*4,true)/32768;rr[i]=pcm.getInt16(i*4+2,true)/32768;}const src=audio_ctx.createBufferSource();src.buffer=ab;src.connect(audio_ctx.destination);let when=Math.max(audio_ctx.currentTime+.03,audio_next);if(when>audio_ctx.currentTime+.25)when=audio_ctx.currentTime+.03;src.start(when);audio_next=when+frames/rate;}catch(e){set_status('Audio failed: '+e.message);}finally{audio_polling=false;}}"
+"audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;audio_next=audio_ctx.currentTime+.04;if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else if(audio_timer){clearInterval(audio_timer);audio_timer=null;}};"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',s.i2s_tx.toLocaleString()+'/'+s.dma_audio_starts.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;if(audio_ctx)audio_next=audio_ctx.currentTime+.04;}audio_latest=s.audio_cursor;"
 "if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -215,6 +220,11 @@ static void put32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)(v >> 24);
 }
 
+static void put64(uint8_t *p, uint64_t v) {
+    put32(p, (uint32_t)v);
+    put32(p + 4, (uint32_t)(v >> 32u));
+}
+
 static void rgb565(uint16_t p, uint8_t *r, uint8_t *g, uint8_t *b) {
     uint16_t raw = (uint16_t)((p >> 8u) | (p << 8u));
     *r = (uint8_t)(((raw >> 11) & 0x1fu) * 255u / 31u);
@@ -310,8 +320,10 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,"
                      "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
                      "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
+                     "\"audio_cursor\":%llu,\"audio_rate\":%u,\"audio_output\":%s,"
+                     "\"audio_nonzero\":%llu,\"audio_silenced\":%llu,\"audio_peak\":%u,\"audio_underruns\":%llu,\"audio_dropped\":%llu,"
                      "\"i2c_txns\":%llu,\"i2c_last\":\"addr=0x%02x op=%s count=%u data=0x%08x\","
-                     "\"wm8975\":\"writes=%llu resets=%llu muted=%u rate=0x%03x pwr=0x%03x/0x%03x out1=0x%03x/0x%03x\","
+                     "\"wm8975\":\"writes=%llu resets=%llu mode=%s output=%u muted=%u rate=%u control=0x%03x power=0x%03x out1=0x%03x/0x%03x\","
                      "\"input_events\":%llu,\"input\":\"%s\","
                      "\"opto_queue\":%u,\"opto_front\":\"0x%08x\","
                      "\"opto_buttons\":\"0x%08x\",\"opto_regs04\":\"0x%08x\","
@@ -345,6 +357,14 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)(s->dma.ch[0].starts + s->dma.ch[1].starts + s->dma.ch[2].starts + s->dma.ch[3].starts),
                      (unsigned long long)(s->dma.ch[0].completions + s->dma.ch[1].completions + s->dma.ch[2].completions + s->dma.ch[3].completions),
                      (unsigned long long)(s->dma.ch[0].bytes_pushed + s->dma.ch[1].bytes_pushed + s->dma.ch[2].bytes_pushed + s->dma.ch[3].bytes_pushed),
+                     (unsigned long long)s->i2s.pcm_produced_halfwords,
+                     s->i2c.wm8975_sample_rate != 0u ? s->i2c.wm8975_sample_rate : 44100u,
+                     s->i2c.wm8975_output_enabled ? "true" : "false",
+                     (unsigned long long)s->i2s.pcm_nonzero_halfwords,
+                     (unsigned long long)s->i2s.pcm_silenced_halfwords,
+                     s->i2s.pcm_peak,
+                     (unsigned long long)s->i2s.underruns,
+                     (unsigned long long)s->i2s.host_dropped_halfwords,
                      (unsigned long long)s->i2c.transactions,
                      s->i2c.last_addr,
                      s->i2c.last_read ? "read" : "write",
@@ -352,10 +372,12 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      s->i2c.last_data,
                      (unsigned long long)s->i2c.addr_writes[0x1au],
                      (unsigned long long)s->i2c.wm8975_resets,
+                     s->i2c.wm8975_legacy_mode ? "legacy" : "native",
+                     s->i2c.wm8975_output_enabled ? 1u : 0u,
                      (s->i2c.wm8975_regs[0x05u] & (1u << 3u)) != 0u ? 1u : 0u,
+                     s->i2c.wm8975_sample_rate,
                      (unsigned)s->i2c.wm8975_regs[0x08u],
-                     (unsigned)s->i2c.wm8975_regs[0x19u],
-                     (unsigned)s->i2c.wm8975_regs[0x1au],
+                     (unsigned)s->i2c.wm8975_regs[s->i2c.wm8975_legacy_mode ? 0x06u : 0x1au],
                      (unsigned)s->i2c.wm8975_regs[0x02u],
                      (unsigned)s->i2c.wm8975_regs[0x03u],
                      (unsigned long long)s->opto.input_events,
@@ -517,6 +539,71 @@ static bool query_u32(const char *query, const char *key, uint32_t *out) {
     return true;
 }
 
+static bool query_u64(const char *query, const char *key, uint64_t *out) {
+    if (!query || !key || !out) {
+        return false;
+    }
+    const char *p = strstr(query, key);
+    if (!p) {
+        return false;
+    }
+    p += strlen(key);
+    if (*p != '=') {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long long value = strtoull(p + 1, &end, 0);
+    if (end == p + 1) {
+        return false;
+    }
+    *out = (uint64_t)value;
+    return true;
+}
+
+static bool send_audio_pcm(n1g_state_t *s, intptr_t fd, const char *query) {
+    uint64_t produced = s->i2s.pcm_produced_halfwords & ~1ull;
+    uint64_t cursor = produced;
+    (void)query_u64(query, "cursor", &cursor);
+    uint64_t oldest = produced > N1G_AUDIO_RING_HALFWORDS ?
+                      produced - N1G_AUDIO_RING_HALFWORDS : 0u;
+    oldest = (oldest + 1u) & ~1ull;
+    if (cursor < oldest) {
+        s->i2s.host_dropped_halfwords += oldest - cursor;
+        cursor = oldest;
+    }
+    if (cursor > produced) {
+        cursor = produced;
+    }
+    cursor = (cursor + 1u) & ~1ull;
+    uint64_t available = produced - cursor;
+    if (available > 16384u) {
+        s->i2s.host_dropped_halfwords += available - 16384u;
+        cursor = produced - 16384u;
+        available = 16384u;
+    }
+
+    uint32_t count = (uint32_t)available;
+    size_t body_len = 32u + (size_t)count * 2u;
+    uint8_t *body = (uint8_t *)malloc(body_len);
+    if (!body) {
+        const char msg[] = "out of memory\n";
+        return send_response(fd, "500 Internal Server Error", "text/plain", msg, sizeof(msg) - 1u);
+    }
+    put32(body, 0x3141314eu); /* N1A1 */
+    put32(body + 4, s->i2c.wm8975_sample_rate != 0u ? s->i2c.wm8975_sample_rate : 44100u);
+    put64(body + 8, cursor);
+    put64(body + 16, cursor + count);
+    put32(body + 24, count);
+    put32(body + 28, s->i2c.wm8975_output_enabled ? 1u : 0u);
+    for (uint32_t i = 0; i < count; i++) {
+        put16(body + 32u + i * 2u,
+              (uint16_t)s->i2s.pcm_ring[(cursor + i) % N1G_AUDIO_RING_HALFWORDS]);
+    }
+    bool ok = send_response(fd, "200 OK", "application/octet-stream", body, body_len);
+    free(body);
+    return ok;
+}
+
 static bool send_dump32(n1g_state_t *s, intptr_t fd, const char *query) {
     uint32_t addr = 0;
     uint32_t count = 16;
@@ -653,6 +740,8 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         (void)send_input(s, fd, query ? query : "");
     } else if (strcmp(path, "/control") == 0) {
         (void)send_control(web, fd, query ? query : "");
+    } else if (strcmp(path, "/audio.pcm") == 0) {
+        (void)send_audio_pcm(s, fd, query ? query : "");
     } else if (strcmp(path, "/frame.rgba") == 0) {
         size_t len = 0;
         uint8_t *rgba = make_rgba(s, &len);

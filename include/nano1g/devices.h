@@ -48,7 +48,7 @@ uint32_t n1g_dev_i2s_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 void n1g_dev_i2s_tick(n1g_state_t *s);
 uint32_t n1g_dev_i2s_tx_free(const n1g_state_t *s);
-void n1g_dev_i2s_push_tx(n1g_state_t *s, uint32_t size);
+void n1g_dev_i2s_push_tx(n1g_state_t *s, uint32_t size, uint32_t value);
 
 uint32_t n1g_dev_serial_read(n1g_state_t *s, unsigned channel, uint32_t offset, uint32_t size);
 void n1g_dev_serial_write(n1g_state_t *s, unsigned channel, uint32_t offset, uint32_t size, uint32_t value);

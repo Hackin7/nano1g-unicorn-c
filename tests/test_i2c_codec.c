@@ -30,19 +30,43 @@ int main(void) {
 
     write_codec(&s, WM8975_RESET_REG, 0u);
     write_codec(&s, 0x06u, 0x067u);
-    write_codec(&s, 0x02u, 0x180u);
+    write_codec(&s, 0x04u, 0x012u);
+    write_codec(&s, 0x05u, 0x000u);
+    write_codec(&s, 0x08u, 0x023u);
+    write_codec(&s, 0x09u, 0x001u);
+    write_codec(&s, 0x02u, 0x1d8u);
 
-    if (expect_true(s.i2c.transactions == 3u, "wrong I2C transaction count") ||
-        expect_true(s.i2c.addr_writes[0x1au] == 3u, "wrong WM8975 write count") ||
+    if (expect_true(s.i2c.transactions == 7u, "wrong I2C transaction count") ||
+        expect_true(s.i2c.addr_writes[0x1au] == 7u, "wrong WM8975 write count") ||
         expect_true(s.i2c.wm8975_resets == 1u, "WM8975 reset was not recorded") ||
+        expect_true(s.i2c.wm8975_legacy_mode, "WM8975 legacy control mode was not detected") ||
+        expect_true(s.i2c.wm8975_output_enabled, "WM8975 output path was not enabled") ||
+        expect_true(s.i2c.wm8975_sample_rate == 44100u, "WM8975 sample rate was decoded incorrectly") ||
+        expect_true(s.i2c.wm8975_gain_q15[0] > 0, "WM8975 left output gain stayed muted") ||
+        expect_true(s.i2c.wm8975_gain_q15[0] == s.i2c.wm8975_gain_q15[1],
+                    "WM8975 update-both volume did not reach the right channel") ||
         expect_true(s.i2c.wm8975_regs[0x06u] == 0x067u,
                     "WM8975 low eight-bit value was decoded incorrectly") ||
-        expect_true(s.i2c.wm8975_regs[0x02u] == 0x180u,
+        expect_true(s.i2c.wm8975_regs[0x02u] == 0x1d8u,
                     "WM8975 ninth data bit was decoded incorrectly") ||
         expect_true((s.i2c.wm8975_written & (1ull << 0x06u)) != 0u,
                     "WM8975 written-register mask missed register 6") ||
         expect_true((s.i2c.wm8975_written & (1ull << 0x02u)) != 0u,
                     "WM8975 written-register mask missed register 2")) {
+        return 1;
+    }
+
+    write_codec(&s, 0x05u, 0x008u);
+    if (expect_true(!s.i2c.wm8975_output_enabled, "WM8975 DAC mute did not gate output")) {
+        return 1;
+    }
+    write_codec(&s, 0x05u, 0x000u);
+    write_codec(&s, 0x09u, 0x000u);
+    if (expect_true(!s.i2c.wm8975_output_enabled, "WM8975 inactive latch did not gate output")) {
+        return 1;
+    }
+    write_codec(&s, 0x09u, 0x001u);
+    if (expect_true(s.i2c.wm8975_output_enabled, "WM8975 output did not resume")) {
         return 1;
     }
 

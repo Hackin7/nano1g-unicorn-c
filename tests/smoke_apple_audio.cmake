@@ -67,7 +67,8 @@ set(output "${stdout}\n${stderr}")
 foreach(required
     "apple_handoff status=ok"
     "i2c_summary addr=0x1a reads=0 writes=30"
-    "wm8975_state writes=30 resets=1 muted=0 interface=0x04a rate=0x023"
+    "wm8975_state writes=30 resets=1 mode=legacy output=1 muted=0 sample_rate=44100 interface=0x04a control_rate=0x023 power=0x067"
+    "audio_output enabled=1 rate=44100"
     "lcd_overruns=0")
   string(FIND "${output}" "${required}" pos)
   if(pos EQUAL -1)
@@ -81,7 +82,8 @@ foreach(progress
     "i2s_drained=[1-9][0-9][0-9][0-9][0-9]"
     "dma_audio_starts=[1-9][0-9]*"
     "dma_audio_done=[1-9][0-9]*"
-    "dma_audio_bytes=[1-9][0-9][0-9][0-9][0-9][0-9]")
+    "dma_audio_bytes=[1-9][0-9][0-9][0-9][0-9][0-9]"
+    "nonzero=[1-9][0-9][0-9][0-9]")
   if(NOT output MATCHES "${progress}")
     message(FATAL_ERROR "Apple audio smoke missing progress '${progress}':\n${output}")
   endif()

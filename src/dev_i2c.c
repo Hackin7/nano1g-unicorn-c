@@ -8,6 +8,92 @@
 #define WM8975_REG_COUNT 0x2bu
 #define WM8975_RESET_REG 0x0fu
 
+#define WM8975_DAPCTRL 0x05u
+#define WM8975_DACMU (1u << 3u)
+#define WM8975_LEGACY_APATH 0x04u
+#define WM8975_LEGACY_DACSEL (1u << 4u)
+#define WM8975_LEGACY_PWR 0x06u
+#define WM8975_LEGACY_DACPD (1u << 3u)
+#define WM8975_LEGACY_OUTPD (1u << 4u)
+#define WM8975_LEGACY_POWEROFF (1u << 7u)
+#define WM8975_LEGACY_ACTIVE 0x09u
+#define WM8975_PWRMGMT2 0x1au
+#define WM8975_PWRMGMT2_OUT1 (3u << 5u)
+#define WM8975_PWRMGMT2_DACS (3u << 7u)
+#define WM8975_LOUTMIX1 0x22u
+#define WM8975_LOUTMIX1_LD2LO (1u << 8u)
+#define WM8975_ROUTMIX2 0x25u
+#define WM8975_ROUTMIX2_RD2RO (1u << 8u)
+
+static int32_t wm8975_volume_q15(uint16_t value) {
+    uint32_t level = value & 0x7fu;
+    if (level < 0x30u) {
+        return 0;
+    }
+    int db = (int)level - 0x79;
+    int64_t gain = 32768;
+    while (db < 0) {
+        gain = (gain * 29205 + 16384) >> 15;
+        db++;
+    }
+    while (db > 0) {
+        gain = (gain * 36766 + 16384) >> 15;
+        db--;
+    }
+    return (int32_t)gain;
+}
+
+static uint32_t wm8975_sample_rate(uint16_t value, bool legacy) {
+    uint8_t setting = (uint8_t)value;
+    if (legacy && setting == 0x23u) return 44100u;
+    switch (setting) {
+    case 0x4d: return 8000u;
+    case 0x61: return 12000u;
+    case 0x55: return 16000u;
+    case 0x77: return 22050u;
+    case 0x79: return 24000u;
+    case 0x59: return 32000u;
+    case 0x63: return 44100u;
+    case 0x41: return 48000u;
+    case 0x7f: return 88200u;
+    case 0x5d: return 96000u;
+    default: return 44100u;
+    }
+}
+
+static void wm8975_refresh(n1g_state_t *s) {
+    bool legacy = (s->i2c.wm8975_written & (1ull << WM8975_LEGACY_ACTIVE)) != 0u;
+    uint16_t left = s->i2c.wm8975_regs[0x02u];
+    uint16_t right = s->i2c.wm8975_regs[0x03u];
+    if ((s->i2c.wm8975_written & (1ull << 0x03u)) == 0u && (left & (1u << 8u)) != 0u) {
+        right = left;
+    }
+    s->i2c.wm8975_legacy_mode = legacy;
+    s->i2c.wm8975_gain_q15[0] = wm8975_volume_q15(left);
+    s->i2c.wm8975_gain_q15[1] = wm8975_volume_q15(right);
+    s->i2c.wm8975_sample_rate = wm8975_sample_rate(s->i2c.wm8975_regs[0x08u], legacy);
+
+    bool muted = (s->i2c.wm8975_regs[WM8975_DAPCTRL] & WM8975_DACMU) != 0u;
+    if (legacy) {
+        uint16_t power = s->i2c.wm8975_regs[WM8975_LEGACY_PWR];
+        bool active = (s->i2c.wm8975_regs[WM8975_LEGACY_ACTIVE] & 1u) != 0u;
+        bool powered = (power & (WM8975_LEGACY_DACPD | WM8975_LEGACY_OUTPD |
+                                WM8975_LEGACY_POWEROFF)) == 0u;
+        bool routed = (s->i2c.wm8975_regs[WM8975_LEGACY_APATH] &
+                       WM8975_LEGACY_DACSEL) != 0u;
+        s->i2c.wm8975_output_enabled = active && powered && routed && !muted;
+    } else {
+        uint16_t power = s->i2c.wm8975_regs[WM8975_PWRMGMT2];
+        bool powered = (power & WM8975_PWRMGMT2_DACS) == WM8975_PWRMGMT2_DACS &&
+                       (power & WM8975_PWRMGMT2_OUT1) == WM8975_PWRMGMT2_OUT1;
+        bool routed = (s->i2c.wm8975_regs[WM8975_LOUTMIX1] &
+                       WM8975_LOUTMIX1_LD2LO) != 0u &&
+                      (s->i2c.wm8975_regs[WM8975_ROUTMIX2] &
+                       WM8975_ROUTMIX2_RD2RO) != 0u;
+        s->i2c.wm8975_output_enabled = powered && routed && !muted;
+    }
+}
+
 static uint32_t data32(const n1g_state_t *s) {
     return (uint32_t)s->i2c.data[0] |
            ((uint32_t)s->i2c.data[1] << 8u) |
@@ -192,10 +278,12 @@ static void wm8975_write(n1g_state_t *s, uint8_t count) {
         memset(s->i2c.wm8975_regs, 0, sizeof(s->i2c.wm8975_regs));
         s->i2c.wm8975_written = 0;
         s->i2c.wm8975_resets++;
+        wm8975_refresh(s);
         return;
     }
     s->i2c.wm8975_regs[reg] = value;
     s->i2c.wm8975_written |= 1ull << reg;
+    wm8975_refresh(s);
 }
 
 static void start_txn(n1g_state_t *s) {

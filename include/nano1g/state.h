@@ -9,6 +9,9 @@
 #include "nano1g/map.h"
 #include "nano1g/unicorn_compat.h"
 
+#define N1G_I2S_TX_DEPTH 32u
+#define N1G_AUDIO_RING_HALFWORDS 32768u
+
 typedef enum n1g_core {
     N1G_CORE_CPU = 0,
     N1G_CORE_COP = 1,
@@ -177,9 +180,19 @@ typedef struct n1g_i2s {
     uint32_t clk;
     uint32_t fifo_cfg;
     uint32_t tx_fill;   /* used TX halfword slots, 0..N1G_I2S_TX_DEPTH */
-    uint32_t drain_acc; /* microsecond-scaled drain accumulator */
+    uint32_t tx_head;
+    uint32_t tx_tail;
+    int16_t tx_fifo[N1G_I2S_TX_DEPTH];
+    uint64_t drain_acc; /* microsecond-scaled drain accumulator */
     uint64_t tx_halfwords; /* total halfwords accepted (diagnostics) */
     uint64_t tx_drained_halfwords;
+    int16_t pcm_ring[N1G_AUDIO_RING_HALFWORDS];
+    uint64_t pcm_produced_halfwords;
+    uint64_t pcm_nonzero_halfwords;
+    uint64_t pcm_silenced_halfwords;
+    uint64_t underruns;
+    uint64_t host_dropped_halfwords;
+    uint32_t pcm_peak;
 } n1g_i2s_t;
 
 typedef struct n1g_serial_channel {
@@ -205,6 +218,10 @@ typedef struct n1g_i2c {
     uint16_t wm8975_regs[0x2b];
     uint64_t wm8975_written;
     uint64_t wm8975_resets;
+    uint32_t wm8975_sample_rate;
+    int32_t wm8975_gain_q15[2];
+    bool wm8975_output_enabled;
+    bool wm8975_legacy_mode;
     uint8_t data[4];
     uint8_t control;
     uint8_t addr_op;

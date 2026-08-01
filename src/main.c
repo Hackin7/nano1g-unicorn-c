@@ -589,6 +589,16 @@ run_image:
              (unsigned long long)(s.dma.ch[0].starts + s.dma.ch[1].starts + s.dma.ch[2].starts + s.dma.ch[3].starts),
              (unsigned long long)(s.dma.ch[0].completions + s.dma.ch[1].completions + s.dma.ch[2].completions + s.dma.ch[3].completions),
              (unsigned long long)(s.dma.ch[0].bytes_pushed + s.dma.ch[1].bytes_pushed + s.dma.ch[2].bytes_pushed + s.dma.ch[3].bytes_pushed));
+    n1g_info(&s,
+             "audio_output enabled=%u rate=%u pcm=%llu nonzero=%llu silenced=%llu peak=%u underruns=%llu dropped=%llu",
+             s.i2c.wm8975_output_enabled ? 1u : 0u,
+             s.i2c.wm8975_sample_rate != 0u ? s.i2c.wm8975_sample_rate : 44100u,
+             (unsigned long long)s.i2s.pcm_produced_halfwords,
+             (unsigned long long)s.i2s.pcm_nonzero_halfwords,
+             (unsigned long long)s.i2s.pcm_silenced_halfwords,
+             s.i2s.pcm_peak,
+             (unsigned long long)s.i2s.underruns,
+             (unsigned long long)s.i2s.host_dropped_halfwords);
     if (s.opts.verbose) {
         for (uint32_t addr = 0; addr < 128u; addr++) {
             if (s.i2c.addr_reads[addr] != 0u || s.i2c.addr_writes[addr] != 0u) {
@@ -601,14 +611,16 @@ run_image:
         }
         if (s.i2c.addr_writes[0x1au] != 0u) {
             n1g_info(&s,
-                     "wm8975_state writes=%llu resets=%llu muted=%u interface=0x%03x rate=0x%03x pwr1=0x%03x pwr2=0x%03x out1=0x%03x/0x%03x",
+                     "wm8975_state writes=%llu resets=%llu mode=%s output=%u muted=%u sample_rate=%u interface=0x%03x control_rate=0x%03x power=0x%03x out1=0x%03x/0x%03x",
                      (unsigned long long)s.i2c.addr_writes[0x1au],
                      (unsigned long long)s.i2c.wm8975_resets,
+                     s.i2c.wm8975_legacy_mode ? "legacy" : "native",
+                     s.i2c.wm8975_output_enabled ? 1u : 0u,
                      (s.i2c.wm8975_regs[0x05u] & (1u << 3u)) != 0u ? 1u : 0u,
+                     s.i2c.wm8975_sample_rate,
                      (unsigned)s.i2c.wm8975_regs[0x07u],
                      (unsigned)s.i2c.wm8975_regs[0x08u],
-                     (unsigned)s.i2c.wm8975_regs[0x19u],
-                     (unsigned)s.i2c.wm8975_regs[0x1au],
+                     (unsigned)s.i2c.wm8975_regs[s.i2c.wm8975_legacy_mode ? 0x06u : 0x1au],
                      (unsigned)s.i2c.wm8975_regs[0x02u],
                      (unsigned)s.i2c.wm8975_regs[0x03u]);
         }

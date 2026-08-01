@@ -167,10 +167,12 @@ Useful options:
 - `--web PORT`: serve a local browser frontend on `127.0.0.1:PORT`. The page
   polls native emulator counters and the LCD framebuffer as a BMP image, and
   exposes `/input?button=NAME&state=down|up` and `/input?wheel=down|up` for
-  live interactive control (used by the click wheel UI on the page). The status
-  feed also reports I2S/DMA audio counters (`i2s_tx`, `i2s_drained`,
-  `dma_audio_starts`, `dma_audio_done`, `dma_audio_bytes`) so playback progress
-  is visible in the browser and in scripted checks.
+  live interactive control (used by the click wheel UI on the page). Enable the
+  page's Audio checkbox to start Web Audio output after a browser user gesture.
+  `/audio.pcm?cursor=N` exposes a bounded, cursor-based stereo signed-16-bit PCM
+  stream. The status feed reports codec output state, sample rate, nonzero and
+  silenced sample counts, peak level, underruns, host drops, and the existing
+  I2S/DMA counters so playback progress is visible in scripted checks.
 - `--web-no-hold`: when `--web` is enabled, exit immediately after emulation
   instead of keeping the final frame available in the browser.
 
@@ -243,9 +245,11 @@ Implemented foundation:
 - Rockbox can browse the content-injected disk's `Music/` directory through the
   native Files UI; `tests/smoke_rockbox_music_browse.cmake` records the current
   manual regression path for the shipped MP3 fixtures.
-- The modeled DMA-to-I2S path accepts RAM-backed sample transfers, drains the
-  TX FIFO against guest time, and raises completion status; `audio_path_unit`
-  covers that device-level playback plumbing.
+- The modeled DMA-to-I2S path preserves RAM-backed 16-bit stereo samples,
+  drains the TX FIFO against the codec-selected guest sample rate, applies the
+  WM8975 output power/routing/mute/volume state, and raises DMA completion
+  status. `audio_path_unit` and `i2c_codec_unit` cover that device-level path;
+  the Apple playback smoke verifies nonzero PCM from the official firmware.
 - The standalone Rockbox bootloader fixture runs from fast RAM and reaches a
   nonblack framebuffer without synthetic sysinfo handoff state.
 - The local `../artifacts/firmware/bootloader.bin` fixture is useful as a

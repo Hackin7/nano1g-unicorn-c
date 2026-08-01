@@ -3,6 +3,9 @@
 #include "nano1g/map.h"
 #include "nano1g/trace.h"
 
+#include <limits.h>
+#include <string.h>
+
 /* PP502x IIS controller (Rockbox pp5020.h register layout).
  *
  * Playback model: the guest (directly or via the DMA engine) pushes 16-bit
@@ -22,15 +25,44 @@
 
 #define IIS_IRQ_BIT (1u << 10)
 
-/* 16-bit halfword slots in the TX FIFO. Rockbox reserves "16*4" bytes as one
- * FIFO's worth of data, i.e. 32 halfwords. */
-#define N1G_I2S_TX_DEPTH 32u
-
-/* Stereo 16-bit at 44.1 kHz: 88200 halfwords per second of guest time. */
-#define N1G_I2S_HALFWORDS_PER_SEC 88200u
-
 uint32_t n1g_dev_i2s_tx_free(const n1g_state_t *s) {
     return N1G_I2S_TX_DEPTH - s->i2s.tx_fill;
+}
+
+static uint32_t sample_rate(const n1g_state_t *s) {
+    return s->i2c.wm8975_sample_rate != 0u ? s->i2c.wm8975_sample_rate : 44100u;
+}
+
+static int16_t codec_output_sample(const n1g_state_t *s, int16_t sample, uint32_t channel) {
+    if (!s->i2c.wm8975_output_enabled) {
+        return 0;
+    }
+    int64_t scaled = (int64_t)sample * s->i2c.wm8975_gain_q15[channel & 1u];
+    scaled >>= 15u;
+    if (scaled > 32767) {
+        return 32767;
+    }
+    if (scaled < -32768) {
+        return -32768;
+    }
+    return (int16_t)scaled;
+}
+
+static void clear_tx_fifo(n1g_state_t *s) {
+    s->i2s.tx_fill = 0;
+    s->i2s.tx_head = 0;
+    s->i2s.tx_tail = 0;
+    s->i2s.drain_acc = 0;
+}
+
+static void clear_pcm_ring(n1g_state_t *s) {
+    memset(s->i2s.pcm_ring, 0, sizeof(s->i2s.pcm_ring));
+    s->i2s.pcm_produced_halfwords = 0;
+    s->i2s.pcm_nonzero_halfwords = 0;
+    s->i2s.pcm_silenced_halfwords = 0;
+    s->i2s.underruns = 0;
+    s->i2s.host_dropped_halfwords = 0;
+    s->i2s.pcm_peak = 0;
 }
 
 static void i2s_update_irq(n1g_state_t *s) {
@@ -71,10 +103,13 @@ uint32_t n1g_dev_i2s_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
     }
 }
 
-void n1g_dev_i2s_push_tx(n1g_state_t *s, uint32_t size) {
+void n1g_dev_i2s_push_tx(n1g_state_t *s, uint32_t size, uint32_t value) {
     uint32_t slots = (size == 4u) ? 2u : 1u;
     for (uint32_t i = 0; i < slots; i++) {
         if (s->i2s.tx_fill < N1G_I2S_TX_DEPTH) {
+            int16_t sample = (int16_t)((value >> (i * 16u)) & 0xffffu);
+            s->i2s.tx_fifo[s->i2s.tx_tail] = sample;
+            s->i2s.tx_tail = (s->i2s.tx_tail + 1u) % N1G_I2S_TX_DEPTH;
             s->i2s.tx_fill++;
             s->i2s.tx_halfwords++;
         }
@@ -91,8 +126,8 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
             n1g_log(s, "i2s config write value=0x%08x tx_fill=%u", value, s->i2s.tx_fill);
         }
         if (value & IIS_RESET) {
-            s->i2s.tx_fill = 0;
-            s->i2s.drain_acc = 0;
+            clear_tx_fifo(s);
+            clear_pcm_ring(s);
             s->i2s.tx_halfwords = 0;
             s->i2s.tx_drained_halfwords = 0;
         }
@@ -105,14 +140,13 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
         break;
     case 0x0c:
         if (value & IIS_FIFO_TXCLR) {
-            s->i2s.tx_fill = 0;
-            s->i2s.drain_acc = 0;
+            clear_tx_fifo(s);
         }
         s->i2s.fifo_cfg = value & ~(IIS_FIFO_TXCLR | IIS_FIFO_RXCLR) & 0xffu;
         i2s_update_irq(s);
         break;
     case 0x40:
-        n1g_dev_i2s_push_tx(s, size);
+        n1g_dev_i2s_push_tx(s, size, value);
         break;
     default:
         break;
@@ -120,16 +154,36 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
 }
 
 void n1g_dev_i2s_tick(n1g_state_t *s) {
-    if ((s->i2s.config & IIS_TXFIFOEN) == 0 || s->i2s.tx_fill == 0) {
+    if ((s->i2s.config & IIS_TXFIFOEN) == 0) {
         return;
     }
-    s->i2s.drain_acc += s->opts.rtc_usec_per_tick * N1G_I2S_HALFWORDS_PER_SEC;
+    s->i2s.drain_acc += (uint64_t)s->opts.rtc_usec_per_tick * sample_rate(s) * 2u;
     while (s->i2s.drain_acc >= 1000000u && s->i2s.tx_fill > 0) {
         s->i2s.drain_acc -= 1000000u;
+        int16_t input = s->i2s.tx_fifo[s->i2s.tx_head];
+        uint32_t channel = (uint32_t)(s->i2s.tx_drained_halfwords & 1u);
+        int16_t output = codec_output_sample(s, input, channel);
+        s->i2s.tx_head = (s->i2s.tx_head + 1u) % N1G_I2S_TX_DEPTH;
         s->i2s.tx_fill--;
         s->i2s.tx_drained_halfwords++;
+        uint64_t produced = s->i2s.pcm_produced_halfwords;
+        s->i2s.pcm_ring[produced % N1G_AUDIO_RING_HALFWORDS] = output;
+        s->i2s.pcm_produced_halfwords = produced + 1u;
+        if (output != 0) {
+            uint32_t magnitude = output == INT16_MIN ? 32768u :
+                                 (uint32_t)(output < 0 ? -output : output);
+            s->i2s.pcm_nonzero_halfwords++;
+            if (magnitude > s->i2s.pcm_peak) {
+                s->i2s.pcm_peak = magnitude;
+            }
+        } else if (input != 0) {
+            s->i2s.pcm_silenced_halfwords++;
+        }
     }
     if (s->i2s.tx_fill == 0) {
+        if (s->i2s.drain_acc >= 1000000u) {
+            s->i2s.underruns++;
+        }
         s->i2s.drain_acc = 0;
     }
     i2s_update_irq(s);

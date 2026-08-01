@@ -85,16 +85,16 @@ all intended disk changes persist across clean emulator restarts.
 ## P1: Audible Audio Playback
 
 - [x] Trace Apple codec setup over I2C and identify the codec register model.
-- [ ] Implement the required codec power, routing, mute, gain, and sample-rate
+- [x] Implement the required codec power, routing, mute, gain, and sample-rate
       registers.
 - [ ] Complete I2S format, clock, FIFO, and DMA pacing semantics used by Apple.
-- [ ] Add a host audio sink with bounded buffering and deterministic shutdown.
+- [x] Add a host audio sink with bounded buffering and deterministic shutdown.
 - [ ] Handle underruns, sample-rate changes, pause/resume, seek, and track
       transitions.
-- [ ] Expose useful audio state and underrun counters through `status.json`.
+- [x] Expose useful audio state and underrun counters through `status.json`.
 - [ ] Verify audible Apple playback from the seeded media image.
 - [ ] Verify audible Rockbox MP3 playback through the same hardware path.
-- [ ] Add device-level tests that do not depend on a host sound device.
+- [x] Add device-level tests that do not depend on a host sound device.
 
 Completion signal: Apple and Rockbox both produce correctly paced, audible
 stereo output with stable playback controls and no unbounded buffering.

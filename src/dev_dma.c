@@ -117,7 +117,7 @@ static void audio_ch_run(n1g_state_t *s, uint32_t channel) {
             s->dma.ch[channel].active = false;
             return;
         }
-        n1g_dev_i2s_push_tx(s, 4u);
+        n1g_dev_i2s_push_tx(s, 4u, word);
         s->dma.ch[channel].bytes_pushed += 4u;
         s->dma.ch[channel].cur_addr += 4u;
         s->dma.ch[channel].bytes_left =
