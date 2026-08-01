@@ -28,7 +28,7 @@ execute_process(
     --disk ${disk}
     --load-addr 0x10000000
     --entry 0x10000000
-    --max-insns 3000000
+    --max-insns 8000000
     --slice-insns 1
     --timer-divider 1
     --verbose

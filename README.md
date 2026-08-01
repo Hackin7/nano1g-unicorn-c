@@ -275,9 +275,12 @@ Implemented foundation:
   partitions instead of reset-vector NOR bytes.
 - Direct boot can also source wrapped firmware from the disk image firmware
   partition, matching the local Apple/Rockbox media layout more closely.
-- ATA Identify Device and read-sector transfers now latch the guest-visible
-  command/LBA registers, assert DRQ while data is available, and clear DRQ when
-  the guest drains the transfer.
+- ATA Identify Device and PIO read-sector transfers latch the guest-visible
+  command/LBA registers, expose a device-ticked BSY preparation phase, then
+  assert DRQ and IRQ for each data block. Status reads acknowledge the IRQ;
+  draining the final read block clears DRQ without generating a second
+  completion interrupt. Native ARM smokes cover both one- and two-sector
+  phase transitions.
 - DMA-to-LCD2 transfers route through the modeled LCD2 register window and are
   covered by a native ARM smoke that produces real PPM pixels.
 - The I2C/PMU path models basic PCF register pointer, default reads, guest

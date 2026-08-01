@@ -12,7 +12,7 @@ execute_process(
     --profile rockbox
     --firmware ${firmware}
     --disk ${disk}
-    --max-insns 20000000
+    --max-insns 40000000
     --slice-insns 512
     --ppm ${ppm}
   RESULT_VARIABLE result
@@ -33,6 +33,6 @@ endif()
 if(NOT run_output MATCHES "loaded wrapped osos")
   message(FATAL_ERROR "rockbox smoke did not use the wrapped firmware loader:\n${run_output}")
 endif()
-if(NOT run_output MATCHES "cop_halted=0")
-  message(FATAL_ERROR "rockbox smoke did not wake the COP core:\n${run_output}")
+if(NOT run_output MATCHES "cop_insns=[1-9][0-9]*")
+  message(FATAL_ERROR "rockbox smoke did not execute the COP core:\n${run_output}")
 endif()

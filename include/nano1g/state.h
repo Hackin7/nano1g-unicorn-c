@@ -107,6 +107,7 @@ typedef struct n1g_disk {
     uint32_t dma_addr;
     uint32_t dma_unknown;
     bool dma_pending;
+    bool pio_data_pending;
     uint8_t transfer_kind;
     uint16_t data_index;
     uint8_t identify[512];

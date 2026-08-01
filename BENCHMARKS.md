@@ -7,6 +7,26 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: ATA PIO data-in phase timing
+
+ATA Identify Device and READ SECTORS previously exposed `DRQ` and raised IDE
+IRQ synchronously inside the command-register write. READ SECTORS also kept
+`DRQ` asserted across sector boundaries and raised another IRQ after the final
+word. The model now enters `BSY` on command receipt, exposes `DRQ+IRQ` on the
+next device tick, repeats that phase at each READ SECTORS block boundary, and
+finishes without a second read-completion interrupt.
+
+`smoke_ata_pio_phase` observes the command phase, data-ready IRQ, Status
+acknowledgement, first data word, and final idle state from native ARM code.
+`smoke_ata_pio_multisector` repeats the checks across a two-sector command and
+verifies that each sector has a distinct `BSY -> DRQ+IRQ` transition.
+
+A 20,000,000-instruction verbose Apple stage0 run issued five SET FEATURES
+commands and twenty `0x20` READ SECTORS commands; every observed read requested
+one sector. With the phased PIO model, all twenty reads completed and the
+checkpoint framebuffer remained byte-identical to the prior run:
+`05C3CAF0B619476F51D428EEE4C779CAD35C15D4FFDC14AEC8827DE263A65AA4`.
+
 ## 2026-08-02: Host profiling and native DMA stage0
 
 Added opt-in `--host-profile` timing around CPU, COP, device-tick, input, web,
