@@ -101,6 +101,11 @@ Useful options:
   maps `--flash-rom` at reset vector `0x00000000` and does not preload `osos`.
 - `--firmware-from-disk`: in direct mode, find a wrapped firmware image in the
   loaded disk image and load its `osos` entry instead of using `--firmware`.
+- `--disk-out PATH`: opt into a mutable output image. The source passed with
+  `--disk` remains untouched; guest changes are saved before browser preset
+  restarts and at clean exit. Restarting the owning preset, or an Apple preset
+  that shares the same source disk, reloads the output. Unrelated presets keep
+  their own disks and cannot overwrite it.
 - `--flash-rom PATH`: load a NOR/boot-ROM image, required with
   `--boot-mode flash`.
 - Web preset `Apple official boot` uses `NANO1G_APPLE_BOOTROM` when set, otherwise

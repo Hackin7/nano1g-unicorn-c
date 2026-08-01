@@ -7,6 +7,27 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Browser disk persistence and preset isolation
+
+`--disk-out` previously saved only at final process exit. A web Restart first
+destroyed the current device state, losing guest writes, while preset
+application also discarded the output path. Disk persistence now records its
+owning source path and preset, saves before every owning-preset teardown, and
+reloads the mutable output on restart. Presets with unrelated disks retain
+their normal media and do not save over that output. Runs without `--disk-out`
+still modify only the in-memory copy.
+
+`smoke_web_disk_persistence` starts a live HTTP server around a native ARM ATA
+writer. It observes 256 data-register writes through `status.json`, requests a
+Rockbox restart, verifies the source sector is unchanged and the output begins
+with guest marker `22 11 44 33`, and confirms the output is reloaded. It then
+switches to the 8 MiB iPod Linux disk and back, proving the 512-byte Rockbox
+output remains owned and intact. A second finite run verifies the clean-exit
+save path while preserving its separate seed image.
+
+The final serial gate passed all 63 tests in 490.06 seconds; the persistence
+smoke test took 1.12 seconds.
+
 ## 2026-08-02: ATA media bounds and failing-LBA taskfile state
 
 PIO reads beyond the backing medium previously returned `0xffff`, PIO writes

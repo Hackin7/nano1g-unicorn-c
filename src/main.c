@@ -282,6 +282,9 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     if (opts.boot_mode == N1G_BOOT_FLASH && opts.map_flash_zero) {
         n1g_die("--map-flash-zero is only meaningful in direct boot mode");
     }
+    if (opts.disk_out_path && !opts.disk_path) {
+        n1g_die("--disk-out requires a source disk");
+    }
     return opts;
 }
 
@@ -308,6 +311,38 @@ static void infer_run_label(n1g_opts_t *opts) {
     }
 }
 
+static bool disk_output_active(const n1g_opts_t *opts) {
+    if (!opts->disk_out_path || !opts->disk_path || !opts->disk_seed_path) {
+        return false;
+    }
+    return strcmp(opts->disk_path, opts->disk_seed_path) == 0 ||
+           strcmp(opts->disk_path, opts->disk_out_path) == 0;
+}
+
+static bool save_disk_output(n1g_state_t *s) {
+    if (!disk_output_active(&s->opts)) {
+        return true;
+    }
+    if (!n1g_disk_save(s, s->opts.disk_out_path)) {
+        n1g_info(s, "failed to save disk %s", s->opts.disk_out_path);
+        return false;
+    }
+    return true;
+}
+
+static n1g_opts_t make_restart_opts(const n1g_state_t *s, const char *preset) {
+    n1g_opts_t next = s->opts;
+    apply_run_preset(&next, preset);
+    bool same_seed_path = next.disk_path && next.disk_seed_path &&
+                          strcmp(next.disk_path, next.disk_seed_path) == 0;
+    bool same_seed_label = next.run_label && next.disk_seed_label &&
+                           strcmp(next.run_label, next.disk_seed_label) == 0;
+    if (next.disk_out_path && (same_seed_path || same_seed_label)) {
+        next.disk_path = next.disk_out_path;
+    }
+    return next;
+}
+
 static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool web_enabled = opts->web_enabled;
     const uint16_t web_port = opts->web_port;
@@ -319,6 +354,9 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool apple_diagnostics = opts->apple_diagnostics;
     const bool host_profile = opts->host_profile;
     const bool verbose = opts->verbose;
+    const char *disk_out_path = opts->disk_out_path;
+    const char *disk_seed_path = opts->disk_seed_path;
+    const char *disk_seed_label = opts->disk_seed_label;
 
     memset(opts, 0, sizeof(*opts));
     opts->boot_mode = N1G_BOOT_DIRECT;
@@ -333,6 +371,9 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->apple_diagnostics = apple_diagnostics;
     opts->host_profile = host_profile;
     opts->verbose = verbose;
+    opts->disk_out_path = disk_out_path;
+    opts->disk_seed_path = disk_seed_path;
+    opts->disk_seed_label = disk_seed_label;
     opts->rtc_usec_per_tick = 1;
     opts->timer_divider = 20;
     opts->load_addr = N1G_SDRAM_BASE;
@@ -550,6 +591,11 @@ int main(int argc, char **argv) {
     memset(&s, 0, sizeof(s));
     memset(&web, 0, sizeof(web));
     n1g_opts_t opts = parse_args(argc, argv);
+    infer_run_label(&opts);
+    if (opts.disk_out_path) {
+        opts.disk_seed_path = opts.disk_path;
+        opts.disk_seed_label = opts.run_label;
+    }
     signal(SIGINT, handle_stop_signal);
 #ifdef SIGTERM
     signal(SIGTERM, handle_stop_signal);
@@ -667,8 +713,11 @@ run_image:
         }
 
         n1g_info(&s, "web restart requested preset=%s", restart_preset);
-        n1g_opts_t next = s.opts;
-        apply_run_preset(&next, restart_preset);
+        if (!save_disk_output(&s)) {
+            exit_code = 1;
+            break;
+        }
+        n1g_opts_t next = make_restart_opts(&s, restart_preset);
         destroy_state(&s);
         state_active = false;
         if (!init_state(&s, next)) {
@@ -1150,8 +1199,11 @@ run_image:
             n1g_web_poll(&s, &web, false);
             if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
                 n1g_info(&s, "web restart requested preset=%s", restart_preset);
-                n1g_opts_t next = s.opts;
-                apply_run_preset(&next, restart_preset);
+                if (!save_disk_output(&s)) {
+                    exit_code = 1;
+                    break;
+                }
+                n1g_opts_t next = make_restart_opts(&s, restart_preset);
                 destroy_state(&s);
                 state_active = false;
                 if (!init_state(&s, next)) {
@@ -1164,8 +1216,7 @@ run_image:
             n1g_web_sleep_ms(16);
         }
     }
-    if (s.opts.disk_out_path && !n1g_disk_save(&s, s.opts.disk_out_path)) {
-        n1g_info(&s, "failed to save disk %s", s.opts.disk_out_path);
+    if (!save_disk_output(&s)) {
         exit_code = 1;
     }
     n1g_web_stop(&web);

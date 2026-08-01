@@ -40,6 +40,7 @@ Run the emulator with the browser UI:
 build-mingw/nano1g.exe --profile rockbox `
   --firmware ../artifacts/firmware/rockbox.ipod `
   --disk tmp/ipodhd-rockbox-nano-content-gpt.img `
+  --disk-out tmp/rockbox-browser-session.img `
   --run-forever `
   --slice-insns 512 `
   --timer-divider 1 `
@@ -50,6 +51,12 @@ build-mingw/nano1g.exe --profile rockbox `
 
 Open `http://127.0.0.1:18080/`. The page shows the live LCD framebuffer, native
 execution counters, audio/DMA counters, and click-wheel controls.
+
+`--disk-out` is optional. With it, the emulator saves guest writes before a
+browser Restart and at clean exit, then reloads that mutable image when the
+owning preset returns. Without it, all writes remain in memory and the source
+fixture is never modified. To continue the saved session in a new process, use
+the prior output image as that run's `--disk` input.
 
 ## Input
 

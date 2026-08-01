@@ -318,7 +318,7 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
                      "\"device_ticks\":%llu,\"lcd_words\":%llu,\"lcd_gram\":%llu,"
                      "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
-                     "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,"
+                     "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,\"disk_writes\":%llu,"
                      "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
                      "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
                      "\"audio_cursor\":%llu,\"audio_rate\":%u,\"audio_stream\":%u,\"audio_stream_start\":%llu,\"audio_output\":%s,"
@@ -352,6 +352,7 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)(s->dma.lcd_transfers[0] + s->dma.lcd_transfers[1] +
                                           s->dma.lcd_transfers[2] + s->dma.lcd_transfers[3]),
                      (unsigned long long)s->counters.disk_reads,
+                     (unsigned long long)s->counters.disk_writes,
                      (unsigned long long)s->counters.irq_count,
                      (unsigned long long)s->i2s.tx_halfwords,
                      (unsigned long long)s->i2s.tx_drained_halfwords,

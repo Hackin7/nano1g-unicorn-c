@@ -40,6 +40,8 @@ typedef struct n1g_opts {
     const char *flash_path;
     const char *disk_path;
     const char *disk_out_path;
+    const char *disk_seed_path;
+    const char *disk_seed_label;
     const char *ppm_path;
     const char *input_script;
     uint32_t battery_percent;

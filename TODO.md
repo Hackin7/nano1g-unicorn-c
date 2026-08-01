@@ -81,9 +81,9 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
 - [ ] Validate ATA status, DRQ, error, IRQ acknowledgement, DMA pacing, and
       multi-sector boundary behavior against firmware expectations.
 - [ ] Validate sector writes, cache/flush behavior, and transfer interruption.
-- [ ] Make browser-launched sessions optionally persist disk changes through a
+- [x] Make browser-launched sessions optionally persist disk changes through a
       clearly selected `--disk-out` image.
-- [ ] Ensure source fixtures remain read-only by default.
+- [x] Ensure source fixtures remain read-only by default.
 - [ ] Verify settings and preferences survive an emulator restart.
 - [x] Verify the Apple firmware reads the seeded iTunesDB and media files.
 - [ ] Verify playlists, tracks, metadata, seeking, and play counts.
