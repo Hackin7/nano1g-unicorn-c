@@ -2348,6 +2348,7 @@ bool n1g_cpu_init(n1g_state_t *s) {
             return false;
         }
         if (s->opts.profile == N1G_PROFILE_APPLE &&
+            (s->opts.apple_diagnostics || s->opts.verbose) &&
             ((s->opts.verbose
                   ? !add_apple_verbose_hooks(s, s->cpu[i].uc)
                   : !add_apple_progress_hooks(s, s->cpu[i].uc)) ||
@@ -2366,6 +2367,7 @@ bool n1g_cpu_init(n1g_state_t *s) {
             return false;
         }
         if (s->opts.profile == N1G_PROFILE_APPLE &&
+            (s->opts.apple_diagnostics || s->opts.verbose) &&
             !add_hook_checked(s,
                               s->cpu[i].uc,
                               UC_HOOK_MEM_WRITE,

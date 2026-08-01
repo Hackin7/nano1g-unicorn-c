@@ -7,6 +7,37 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Apple diagnostic-hook isolation
+
+Normal Apple runs previously installed roughly sixty read-only
+`UC_HOOK_CODE` ranges on both the CPU and COP. Several ranges covered hot
+scheduler and UI paths, splitting translated blocks and invoking host callbacks
+even when neither `--verbose` nor tracing was requested. The hooks only read
+guest registers, RAM, and device state; their writes are confined to host-side
+diagnostic counters.
+
+The progress hooks are now opt-in with `--apple-diagnostics`; `--verbose`
+continues to install the fuller diagnostic set. An 80,000,000-instruction
+Apple stage0 run using `--slice-insns 512 --rtc-usec-per-tick 8` measured:
+
+| Mode | Wall time | Throughput |
+| --- | ---: | ---: |
+| Previous always-on progress hooks | 19.323 s | 4.140 MIPS |
+| Normal run, hooks omitted | 5.662 s | 14.130 MIPS |
+| Explicit `--apple-diagnostics` | 19.434 s | 4.116 MIPS |
+
+The normal path is about 3.4 times faster in this early-boot sample. This is
+still below the preset's modeled 64 MIPS rate, so it removes a major source of
+observer-induced timing distortion rather than establishing real-time
+execution.
+
+For behavioral equivalence, matching 175,000,000-instruction runs with and
+without `--apple-diagnostics` produced byte-identical PPM files with SHA-256
+`258B8B954716187DCAB9C8807D6F1CA01F57357B501A5658C9D8E23BAB2BD822` and
+identical guest instruction, tick, MMIO, LCD, DMA, disk, IRQ, PC, audio, and
+core-state summaries. The Apple menu-navigation smoke explicitly opts into the
+progress counters and still passes.
+
 ## 2026-07-10: Web tap controls + calculator plugin demonstration
 
 Rockbox was stalling in a cache-maintenance MMIO loop after writing

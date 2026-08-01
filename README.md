@@ -128,8 +128,11 @@ Useful options:
 - `--ram-fill-zero`: initialize guest RAM with zeroes instead of the default
   diagnostic `0x2d` pattern. This is only a reset-state experiment knob; it
   does not seed Apple boot metadata or firmware-owned structures.
-- `--verbose`: enable Apple probe logs and extra tracing hooks. Normal runs keep
-  only status lines.
+- `--apple-diagnostics`: enable the read-only Apple progress hooks and counters
+  used by diagnostic smoke tests. Normal runs omit these hooks so they do not
+  split hot translated blocks or distort firmware timing.
+- `--verbose`: enable the fuller Apple probe/logging hook set and extra tracing;
+  it implies Apple diagnostics.
 - `--trace-pc`: log translated basic blocks. This is very slow.
 - `--trace-mmio`: log MMIO accesses. This is very slow.
 - `--load-addr ADDR`: override firmware load address, default `0x10000000`.

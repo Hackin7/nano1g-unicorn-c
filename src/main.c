@@ -52,7 +52,7 @@ static void usage(void) {
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
     puts("       [--battery-percent N] [--main-charger] [--usb-charger]");
     puts("       [--web PORT] [--web-no-hold] [--run-forever]");
-    puts("       [--trace-pc] [--trace-mmio] [--verbose]");
+    puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--verbose]");
 }
 
 static bool parse_profile(const char *v, n1g_profile_t *out) {
@@ -186,6 +186,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.trace_pc = true;
         } else if (strcmp(a, "--trace-mmio") == 0) {
             opts.trace_mmio = true;
+        } else if (strcmp(a, "--apple-diagnostics") == 0) {
+            opts.apple_diagnostics = true;
         } else if (strcmp(a, "--verbose") == 0) {
             opts.verbose = true;
         } else {
@@ -238,6 +240,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool run_forever = opts->run_forever;
     const bool trace_pc = opts->trace_pc;
     const bool trace_mmio = opts->trace_mmio;
+    const bool apple_diagnostics = opts->apple_diagnostics;
     const bool verbose = opts->verbose;
 
     memset(opts, 0, sizeof(*opts));
@@ -250,6 +253,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->ppm_path = ppm_path;
     opts->trace_pc = trace_pc;
     opts->trace_mmio = trace_mmio;
+    opts->apple_diagnostics = apple_diagnostics;
     opts->verbose = verbose;
     opts->rtc_usec_per_tick = 1;
     opts->timer_divider = 20;

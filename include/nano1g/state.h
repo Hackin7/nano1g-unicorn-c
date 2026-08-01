@@ -67,6 +67,7 @@ typedef struct n1g_opts {
     bool run_forever;
     bool trace_pc;
     bool trace_mmio;
+    bool apple_diagnostics;
     bool verbose;
     uint32_t probe_pc[16];
     uint32_t probe_pc_count;

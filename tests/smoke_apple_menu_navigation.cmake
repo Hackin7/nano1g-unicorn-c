@@ -40,6 +40,7 @@ endif()
 execute_process(
   COMMAND ${NANO1G_BIN}
     --profile apple
+    --apple-diagnostics
     --firmware ${bin}
     --disk ${disk}
     --load-addr 0x40000000

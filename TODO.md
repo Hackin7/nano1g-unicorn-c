@@ -150,6 +150,12 @@ can enter, use, and leave its expected USB modes without register stubs.
 
 ## P2: CPU, COP, Interrupt, DMA, And Timing Accuracy
 
+- [x] Remove read-only Apple progress hooks from normal execution and expose
+      them explicitly through `--apple-diagnostics` so probes do not distort
+      firmware timing.
+- [ ] Raise normal Apple throughput from the measured 14.1 MIPS early-boot
+      rate toward the modeled 64 MIPS rate without reducing peripheral timing
+      resolution or skipping guest-visible work.
 - [ ] Audit CPU/COP scheduling and mailbox behavior under sustained dual-core
       workloads.
 - [ ] Improve interrupt priority, masking, forced-interrupt, and acknowledgement
