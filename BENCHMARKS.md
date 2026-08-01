@@ -7,6 +7,20 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: ATA PIO data-out phase timing
+
+PIO writes previously exposed `DRQ+IRQ` synchronously with the command write,
+kept DRQ asserted across sectors, and completed in the same Data-register
+access as the final word. The device now enters BSY for each preparation phase.
+The first writable block exposes DRQ without IRQ; subsequent writable blocks
+expose DRQ with IRQ; after the final word, a separate device tick clears BSY
+and raises the command-completion IRQ.
+
+`smoke_ata_pio_write_phase` verifies the single-sector command, first-block,
+completion, Status-acknowledgement, and readback sequence. The two-sector
+`smoke_ata_pio_write_multisector` additionally verifies the interrupting second
+block boundary and reads sector one back through a PIO read command.
+
 ## 2026-08-02: ATA PIO data-in phase timing
 
 ATA Identify Device and READ SECTORS previously exposed `DRQ` and raised IDE

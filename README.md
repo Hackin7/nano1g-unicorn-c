@@ -281,6 +281,10 @@ Implemented foundation:
   draining the final read block clears DRQ without generating a second
   completion interrupt. Native ARM smokes cover both one- and two-sector
   phase transitions.
+- PIO writes expose first-block DRQ without IRQ, interrupt when subsequent
+  blocks become writable, and enter a device-ticked BSY completion phase after
+  the final data word. One- and two-sector ARM smokes verify the status/IRQ
+  sequence and read the written data back through ATA.
 - DMA-to-LCD2 transfers route through the modeled LCD2 register window and are
   covered by a native ARM smoke that produces real PPM pixels.
 - The I2C/PMU path models basic PCF register pointer, default reads, guest

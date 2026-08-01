@@ -72,6 +72,8 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
 - [x] Model ATA PIO data-in command and inter-sector phases as
       `BSY -> DRQ+IRQ`, with Status acknowledgement and no extra completion IRQ
       after the final read block.
+- [x] Model ATA PIO data-out first-block, inter-sector, and final-completion
+      phases, including the different IRQ behavior at each boundary.
 - [ ] Validate ATA status, DRQ, error, IRQ acknowledgement, DMA pacing, and
       multi-sector boundary behavior against firmware expectations.
 - [ ] Validate sector writes, cache/flush behavior, and transfer interruption.

@@ -141,11 +141,29 @@ static void finish_transfer(n1g_state_t *s, bool raise_irq) {
     s->disk.status = ATA_DRDY | ATA_DSC;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
     s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 0;
     if (raise_irq) {
         set_ide_irq(s, true);
     }
+}
+
+static void schedule_pio_data(n1g_state_t *s, bool raise_irq) {
+    s->disk.status = ATA_BSY;
+    s->disk.pio_data_pending = true;
+    s->disk.pio_ready_irq = raise_irq;
+    s->disk.pio_completion_pending = false;
+    set_ide_irq(s, false);
+}
+
+static void schedule_pio_completion(n1g_state_t *s) {
+    s->disk.status = ATA_BSY;
+    s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = true;
+    set_ide_irq(s, false);
 }
 
 bool n1g_disk_load(n1g_state_t *s, const char *path) {
@@ -218,8 +236,7 @@ static uint16_t read_sector_word(n1g_state_t *s) {
         if (s->disk.sectors_remaining == 0) {
             finish_transfer(s, false);
         } else {
-            s->disk.status = ATA_BSY;
-            s->disk.pio_data_pending = true;
+            schedule_pio_data(s, true);
         }
     }
     return out;
@@ -240,9 +257,9 @@ static void write_sector_word(n1g_state_t *s, uint16_t value) {
             s->disk.sectors_remaining--;
         }
         if (s->disk.sectors_remaining == 0) {
-            finish_transfer(s, true);
+            schedule_pio_completion(s);
         } else {
-            set_ide_irq(s, true);
+            schedule_pio_data(s, true);
         }
     }
 }
@@ -292,9 +309,7 @@ static void start_identify(n1g_state_t *s) {
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 1;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_IDENTIFY;
-    s->disk.status = ATA_BSY;
-    s->disk.pio_data_pending = true;
-    set_ide_irq(s, false);
+    schedule_pio_data(s, true);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata identify sectors=%u word5_sector_bytes=%u status=0x%02x",
@@ -311,9 +326,7 @@ static void start_read(n1g_state_t *s) {
     s->disk.sectors_remaining = count;
     s->disk.data_index = 0;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_READ;
-    s->disk.status = ATA_BSY;
-    s->disk.pio_data_pending = true;
-    set_ide_irq(s, false);
+    schedule_pio_data(s, true);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata read cmd=0x%02x lba=%u count=%u first_word=0x%04x status=0x%02x",
@@ -332,9 +345,7 @@ static void start_write(n1g_state_t *s) {
     s->disk.sectors_remaining = count;
     s->disk.data_index = 0;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_WRITE;
-    s->disk.pio_data_pending = false;
-    s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
-    set_ide_irq(s, true);
+    schedule_pio_data(s, false);
     if (s->opts.verbose) {
         n1g_info(s,
                  "ata write cmd=0x%02x lba=%u count=%u status=0x%02x",
@@ -428,15 +439,21 @@ static void start_dma(n1g_state_t *s, bool write) {
     s->disk.data_index = 0;
     s->disk.transfer_kind = write ? N1G_ATA_TRANSFER_DMA_WRITE : N1G_ATA_TRANSFER_DMA_READ;
     s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
     s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
     set_ide_irq(s, false);
     schedule_dma(s);
 }
 void n1g_disk_tick(n1g_state_t *s) {
+    if (s->disk.pio_completion_pending) {
+        finish_transfer(s, true);
+    }
     if (s->disk.pio_data_pending) {
         s->disk.pio_data_pending = false;
         s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
-        set_ide_irq(s, true);
+        set_ide_irq(s, s->disk.pio_ready_irq);
+        s->disk.pio_ready_irq = false;
     }
     if (s->disk.dma_pending) {
         complete_dma_transfer(s);
@@ -449,6 +466,8 @@ static void complete_nondata_command(n1g_state_t *s) {
     s->disk.status = ATA_DRDY | ATA_DSC;
     s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
     s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 0;
     set_ide_irq(s, true);
@@ -646,6 +665,8 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
             s->disk.status = ATA_DRDY | ATA_ERR;
             s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
             s->disk.pio_data_pending = false;
+            s->disk.pio_ready_irq = false;
+            s->disk.pio_completion_pending = false;
             set_ide_irq(s, true);
             if (s->opts.verbose) {
                 n1g_info(s, "ata unsupported cmd=0x%02x lba=%u count=%u status=0x%02x",
