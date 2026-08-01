@@ -40,6 +40,8 @@ void n1g_dev_dma_tick(n1g_state_t *s);
 
 uint32_t n1g_dev_gpio_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_gpio_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+bool n1g_dev_gpio_set_hold(n1g_state_t *s, bool engaged);
+bool n1g_dev_gpio_set_chargers(n1g_state_t *s, bool main_connected, bool usb_connected);
 
 uint32_t n1g_dev_i2c_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_i2c_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
@@ -59,6 +61,7 @@ void n1g_dev_opto_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
 bool n1g_dev_opto_button(n1g_state_t *s, const char *button, bool pressed);
 bool n1g_dev_opto_tap(n1g_state_t *s, const char *button, uint64_t hold_ticks);
 bool n1g_dev_opto_wheel(n1g_state_t *s, int delta);
+void n1g_dev_opto_release_all(n1g_state_t *s);
 void n1g_dev_opto_tick(n1g_state_t *s);
 
 uint32_t n1g_dev_usb_read(n1g_state_t *s, uint32_t offset, uint32_t size);

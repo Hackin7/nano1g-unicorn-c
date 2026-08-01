@@ -39,6 +39,15 @@ static void set_last_input(n1g_state_t *s, const char *kind, const char *name) {
                    name);
 }
 
+static bool suppress_for_hold(n1g_state_t *s, const char *name) {
+    if (!s->opts.hold_switch_engaged) {
+        return false;
+    }
+    s->opto.suppressed_events++;
+    set_last_input(s, "held", name);
+    return true;
+}
+
 static void enqueue_status(n1g_state_t *s, uint32_t status) {
     if (s->opto.queue_len > 0u) {
         uint8_t last = (uint8_t)((s->opto.queue_head + s->opto.queue_len - 1u) & 7u);
@@ -130,6 +139,9 @@ bool n1g_dev_opto_button(n1g_state_t *s, const char *button, bool pressed) {
     if (bit == 0) {
         return false;
     }
+    if (suppress_for_hold(s, button)) {
+        return true;
+    }
 
     if (pressed) {
         s->opto.button_bits |= bit;
@@ -147,6 +159,9 @@ bool n1g_dev_opto_tap(n1g_state_t *s, const char *button, uint64_t hold_ticks) {
     if (bit == 0) {
         return false;
     }
+    if (suppress_for_hold(s, button)) {
+        return true;
+    }
     if (s->opto.pending_release_bits != 0u) {
         s->opto.button_bits &= ~s->opto.pending_release_bits;
         enqueue_status(s, OPTO_PACKET_BASE | s->opto.button_bits);
@@ -160,6 +175,9 @@ bool n1g_dev_opto_tap(n1g_state_t *s, const char *button, uint64_t hold_ticks) {
 }
 
 bool n1g_dev_opto_wheel(n1g_state_t *s, int delta) {
+    if (suppress_for_hold(s, delta >= 0 ? "wheel-down" : "wheel-up")) {
+        return true;
+    }
     int pos = (int)s->opto.wheel_pos + delta;
     while (pos < 0) {
         pos += 96;
@@ -172,6 +190,17 @@ bool n1g_dev_opto_wheel(n1g_state_t *s, int delta) {
                    ((uint32_t)s->opto.wheel_pos << 16u) |
                    s->opto.button_bits);
     return true;
+}
+
+void n1g_dev_opto_release_all(n1g_state_t *s) {
+    if (s->opto.button_bits == 0u && s->opto.pending_release_bits == 0u) {
+        return;
+    }
+    s->opto.button_bits = 0u;
+    s->opto.pending_release_bits = 0u;
+    s->opto.pending_release_tick = 0u;
+    set_last_input(s, "up", "hold");
+    enqueue_status(s, OPTO_PACKET_BASE);
 }
 
 void n1g_dev_opto_tick(n1g_state_t *s) {

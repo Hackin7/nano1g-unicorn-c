@@ -47,6 +47,7 @@ typedef struct n1g_opts {
     uint32_t battery_percent;
     bool main_charger_connected;
     bool usb_charger_connected;
+    bool hold_switch_engaged;
     n1g_profile_t profile;
     n1g_boot_mode_t boot_mode;
     uint64_t max_insns;
@@ -266,6 +267,7 @@ typedef struct n1g_opto {
     uint8_t queue_len;
     uint8_t wheel_pos;
     uint64_t input_events;
+    uint64_t suppressed_events;
     char last_input[32];
 } n1g_opto_t;
 

@@ -91,8 +91,13 @@ void n1g_input_script_tick(n1g_state_t *s) {
             n1g_info(s, "input inject wheel delta=%d", e->delta);
         } else {
             bool down = e->kind == N1G_INPUT_EV_DOWN;
-            n1g_dev_opto_button(s, e->name, down);
-            n1g_info(s, "input inject button=%s state=%s", e->name, down ? "down" : "up");
+            if (strcmp(e->name, "hold") == 0) {
+                n1g_dev_gpio_set_hold(s, down);
+                n1g_info(s, "input inject hold state=%s", down ? "on" : "off");
+            } else {
+                n1g_dev_opto_button(s, e->name, down);
+                n1g_info(s, "input inject button=%s state=%s", e->name, down ? "down" : "up");
+            }
         }
         script->cursor++;
     }

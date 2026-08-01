@@ -15,6 +15,8 @@ environment into a complete, hardware-faithful iPod Nano 1G emulator.
   PP502x handoff and loader2 boot remain incomplete.
 - Apple browses the seeded iTunesDB, opens Now Playing, programs the WM8975,
   and feeds decoded PCM through DMA to I2S.
+- Apple responds to the active-low GPIOA Hold switch through native guest code,
+  renders its lock icon, and suppresses click-wheel/button input while held.
 - ATA reads/writes, interrupt delivery, timers, flash commands, basic PMU/I2C,
   serial ports, and RAM-to-I2S DMA have focused tests.
 - The current Apple path is stage0-assisted. It is not a stock cold boot.
@@ -119,11 +121,13 @@ stereo output with stable playback controls and no unbounded buffering.
       low-battery behavior as coherent hardware state.
 - [ ] Model RTC date/time persistence and alarm behavior.
 - [ ] Model sleep, wake, power-off, and wake-source transitions.
-- [ ] Verify hold-switch semantics and button suppression.
+- [x] Verify hold-switch semantics, GPIO interrupt acknowledgement, native
+      Apple lock-icon rendering, and button/wheel suppression.
 - [ ] Model PWM-controlled backlight state and brightness.
 - [ ] Model clicker output or expose it as a host event.
-- [ ] Add browser controls for battery, charger, hold, and wake events without
-      embedding firmware policy in the frontend.
+- [x] Add browser controls for live battery, main/USB charger, and Hold state
+      without embedding firmware policy in the frontend.
+- [ ] Add a browser control for wake events once sleep/wake transitions exist.
 
 Completion signal: native firmware can change brightness, sleep, wake, retain
 time, and react correctly to charger, battery, hold, and alarm events.

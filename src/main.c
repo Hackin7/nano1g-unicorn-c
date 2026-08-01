@@ -124,7 +124,7 @@ static void usage(void) {
     puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
-    puts("       [--battery-percent N] [--main-charger] [--usb-charger]");
+    puts("       [--battery-percent N] [--main-charger] [--usb-charger] [--hold-switch]");
     puts("       [--web PORT] [--web-no-hold] [--run-forever]");
     puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--host-profile] [--verbose]");
 }
@@ -245,6 +245,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.main_charger_connected = true;
         } else if (strcmp(a, "--usb-charger") == 0) {
             opts.usb_charger_connected = true;
+        } else if (strcmp(a, "--hold-switch") == 0) {
+            opts.hold_switch_engaged = true;
         } else if (strcmp(a, "--web") == 0 && i + 1 < argc) {
             uint32_t port = n1g_parse_u32(argv[++i], "web");
             if (port == 0 || port > 65535u) {
@@ -357,6 +359,10 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const char *disk_out_path = opts->disk_out_path;
     const char *disk_seed_path = opts->disk_seed_path;
     const char *disk_seed_label = opts->disk_seed_label;
+    const uint32_t battery_percent = opts->battery_percent;
+    const bool main_charger_connected = opts->main_charger_connected;
+    const bool usb_charger_connected = opts->usb_charger_connected;
+    const bool hold_switch_engaged = opts->hold_switch_engaged;
 
     memset(opts, 0, sizeof(*opts));
     opts->boot_mode = N1G_BOOT_DIRECT;
@@ -374,10 +380,13 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->disk_out_path = disk_out_path;
     opts->disk_seed_path = disk_seed_path;
     opts->disk_seed_label = disk_seed_label;
+    opts->battery_percent = battery_percent;
+    opts->main_charger_connected = main_charger_connected;
+    opts->usb_charger_connected = usb_charger_connected;
+    opts->hold_switch_engaged = hold_switch_engaged;
     opts->rtc_usec_per_tick = 1;
     opts->timer_divider = 20;
     opts->load_addr = N1G_SDRAM_BASE;
-    opts->battery_percent = 100u;
 
     if (strcmp(preset, "apple-native") == 0 || strcmp(preset, "apple-stage0") == 0) {
         opts->run_label = apple_stage0_label;

@@ -152,6 +152,8 @@ Useful options:
   - `wait:N` - pause N device ticks before the next event.
   - `NAME-down` / `NAME-up`: press/release a button (`select`, `left`/`prev`,
     `right`/`next`, `play`/`down`, `menu`).
+  - `hold-down` / `hold-up`: engage/disengage the active-low physical Hold
+    switch through GPIOA, including its interrupt and input-suppression path.
   - `NAME` (bare): press, hold `2000` ticks, release.
   - `wheel:+D` / `wheel:-D`: move the click wheel by `D` raw units (the web
     frontend's `wheel=down`/`wheel=up` buttons send `+4`/`-4`).
@@ -176,11 +178,17 @@ Useful options:
   hardware's `power_input_status()` bits. Default: neither connected. Every
   other GPIO input pin still reads idle-high (`0xffffffff`), unrelated to
   these two flags.
+- `--hold-switch`: start with the active-low GPIOA Hold switch engaged. The
+  optical wheel controller suppresses buttons and wheel movement while held,
+  and firmware receives the native GPIO interrupt on each switch transition.
 - `--web PORT`: serve a local browser frontend on `127.0.0.1:PORT`. The page
   polls native emulator counters and the LCD framebuffer as a BMP image, and
   exposes `/input?button=NAME&state=down|up` and `/input?wheel=down|up` for
   live interactive control (used by the click wheel UI on the page). Enable the
   page's Audio checkbox to start Web Audio output after a browser user gesture.
+  The Battery slider and FireWire, USB power, and Hold checkboxes update live
+  guest-visible hardware through `/hardware`; those external states survive a
+  browser preset restart.
   `/audio.pcm?cursor=N` exposes a bounded, cursor-based stereo signed-16-bit PCM
   stream. The status feed reports codec output state, sample rate, nonzero and
   silenced sample counts, peak level, underruns, host drops, and the existing

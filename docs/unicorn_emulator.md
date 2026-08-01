@@ -50,7 +50,10 @@ build-mingw/nano1g.exe --profile rockbox `
 ```
 
 Open `http://127.0.0.1:18080/`. The page shows the live LCD framebuffer, native
-execution counters, audio/DMA counters, and click-wheel controls.
+execution counters, audio/DMA counters, click-wheel controls, and live Battery,
+FireWire charger, USB power, and Hold controls. These controls update the PMU
+ADC and GPIO pins seen by guest firmware; Hold is active-low on GPIOA bit 5,
+raises PP502x GPIO IRQ 32, and suppresses optical-wheel packets while engaged.
 
 `--disk-out` is optional. With it, the emulator saves guest writes before a
 browser Restart and at clean exit, then reloads that mutable image when the
@@ -82,7 +85,8 @@ Raw control endpoints are still available for scripts and debugging:
 
 Headless deterministic input is available through `--input SCRIPT`, where the
 script accepts comma-separated `wait:N`, `NAME-down`, `NAME-up`, bare `NAME`,
-and `wheel:+D` / `wheel:-D` tokens.
+`hold-down`, `hold-up`, and `wheel:+D` / `wheel:-D` tokens. `--hold-switch`
+starts the emulator with Hold engaged.
 
 ## Verified Rockbox Capability
 
@@ -91,6 +95,8 @@ and `wheel:+D` / `wheel:-D` tokens.
 - FAT disk reads from a GPT-wrapped Rockbox content image.
 - Browser framebuffer polling and status counters.
 - Browser click-wheel scroll and server-side tap select.
+- Native Hold-switch GPIO/IRQ handling and firmware-rendered Apple lock icon.
+- Runtime battery and charger controls backed by the existing PMU/GPIO model.
 - Deterministic scripted input through `--input`.
 - Plugin browsing and native plugin loading from `.rockbox/rocks/`.
 - Calculator plugin launch, with `build-mingw/calculator.bmp` captured during

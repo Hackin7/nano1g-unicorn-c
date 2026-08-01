@@ -7,6 +7,34 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Native Hold switch and runtime power controls
+
+The physical Hold switch is now modeled as active-low GPIOA bit 5. Transitions
+latch the configured GPIO level, assert PP502x high interrupt source 0 (IRQ
+32), and follow the guest's level-toggle/status-clear acknowledgement flow.
+Engaging Hold releases any pressed optical-wheel button and suppresses later
+button and wheel packets until release. Main/FireWire and USB charger changes
+use the same runtime GPIO edge path, while the existing PCF battery ADC can now
+be adjusted without restarting.
+
+`gpio_power_unit` covers active-low levels, both Hold edges, IRQ assertion and
+acknowledgement, pressed-button release, suppression counters, charger levels,
+and charger interrupts. `smoke_web_hardware_controls` drives the real HTTP
+server, checks initial options survive preset application, mutates all four
+controls, verifies held browser input is suppressed, preserves the external
+state through a browser preset restart, and rejects an invalid battery
+percentage. The focused five-test gate passed in 2.23 seconds.
+
+The Apple menu acceptance route now engages Hold after navigating Language ->
+main menu -> Extras. Native firmware renders the lock icon with final pixel
+SHA-256 `5207b561de71793b8e1998d3f5f7bc7182b0773b5957992493c74886e0346a5f`;
+the 315-million-instruction capture completed with 55 LCD DMA transfers and no
+LCD block overruns.
+
+The final serial regression gate passed all 65 tests in 507.62 seconds.
+`smoke_apple_menu_navigation` took 164.89 seconds and
+`smoke_web_hardware_controls` took 1.44 seconds in that run.
+
 ## 2026-08-02: Browser disk persistence and preset isolation
 
 `--disk-out` previously saved only at final process exit. A web Restart first

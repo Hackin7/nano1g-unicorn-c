@@ -14,7 +14,7 @@ string(CONCAT input_script
   "wait:285700,select-down,wait:3000,select-up,wait:130000,"
   "wheel:+4,wait:5000,wheel:+4,wait:5000,wheel:+4,wait:5000,"
   "wheel:+4,wait:5000,wheel:+4,wait:30000,"
-  "select-down,wait:3000,select-up,wait:100000")
+  "select-down,wait:3000,select-up,wait:100000,hold-down,wait:20000")
 
 if(NOT EXISTS "${disk}")
   message(WARNING "skipping Apple menu navigation smoke: Apple SysInfo disk fixture is missing")
@@ -45,7 +45,7 @@ execute_process(
     --disk ${disk}
     --load-addr 0x40000000
     --entry 0x40000000
-    --max-insns 300000000
+    --max-insns 315000000
     --slice-insns 512
     --timer-divider 1
     --rtc-usec-per-tick 8
@@ -65,7 +65,8 @@ foreach(required
     "apple_handoff status=ok"
     "lcd_overruns=0"
     "lcd_gram=0"
-    "lcd_state window=0,16-175,135")
+    "lcd_state window=20,0-33,23"
+    "input inject hold state=on")
   string(FIND "${output}" "${required}" pos)
   if(pos EQUAL -1)
     message(FATAL_ERROR "Apple menu navigation smoke missing '${required}':\n${output}")
@@ -109,7 +110,7 @@ execute_process(
     --expected-height 132
     --min-nonblack 20000
     --min-unique 64
-    --expected-pixel-sha256 a202fcdf0940746ebef42d02a9060b52028c59c22f5c2e3ed25960ec8aa77947
+    --expected-pixel-sha256 5207b561de71793b8e1998d3f5f7bc7182b0773b5957992493c74886e0346a5f
   RESULT_VARIABLE result
   OUTPUT_VARIABLE ppm_stdout
   ERROR_VARIABLE ppm_stderr
