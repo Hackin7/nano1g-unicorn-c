@@ -285,6 +285,11 @@ Implemented foundation:
   blocks become writable, and enter a device-ticked BSY completion phase after
   the final data word. One- and two-sector ARM smokes verify the status/IRQ
   sequence and read the written data back through ATA.
+- ATA non-data commands enter BSY and complete on a device tick with an IRQ;
+  unsupported commands and disabled READ/WRITE MULTIPLE requests complete with
+  ABRT. SET MULTIPLE MODE validates the requested block count, supports the
+  ATA-defined zero-count disable operation, and updates IDENTIFY word 59. A
+  native ARM probe covers disabled, enabled, and rejected negotiation paths.
 - DMA-to-LCD2 transfers route through the modeled LCD2 register window and are
   covered by a native ARM smoke that produces real PPM pixels.
 - The I2C/PMU path models basic PCF register pointer, default reads, guest

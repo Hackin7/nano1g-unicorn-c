@@ -110,6 +110,12 @@ typedef struct n1g_disk {
     bool pio_data_pending;
     bool pio_ready_irq;
     bool pio_completion_pending;
+    bool nondata_pending;
+    bool pending_multiple_update;
+    uint8_t pending_error;
+    uint8_t pending_feature;
+    uint8_t pending_multiple_count;
+    uint8_t multiple_count;
     uint8_t transfer_kind;
     uint16_t data_index;
     uint8_t identify[512];

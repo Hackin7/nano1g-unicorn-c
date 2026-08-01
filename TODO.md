@@ -74,6 +74,10 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
       after the final read block.
 - [x] Model ATA PIO data-out first-block, inter-sector, and final-completion
       phases, including the different IRQ behavior at each boundary.
+- [x] Model device-ticked BSY/completion IRQ phases for SET FEATURES,
+      SET MULTIPLE MODE, STANDBY IMMEDIATE, FLUSH CACHE, and rejected commands.
+- [x] Track ATA multiple mode across reset and SET MULTIPLE MODE, report it in
+      IDENTIFY word 59, and ABRT READ/WRITE MULTIPLE while it is disabled.
 - [ ] Validate ATA status, DRQ, error, IRQ acknowledgement, DMA pacing, and
       multi-sector boundary behavior against firmware expectations.
 - [ ] Validate sector writes, cache/flush behavior, and transfer interruption.

@@ -31,6 +31,9 @@
 #define ATA_CMD_SET_FEATURES 0xefu
 #define ATA_CMD_IDENTIFY_DEVICE 0xecu
 
+#define ATA_ERROR_ABORT 0x04u
+#define ATA_MULTIPLE_MAX_SECTORS 1u
+
 #define PP_ATA_DATA 0x1e0u
 #define PP_ATA_ERROR_FEATURES 0x1e4u
 #define PP_ATA_SECTOR_COUNT 0x1e8u
@@ -114,7 +117,7 @@ static void build_identify(n1g_state_t *s) {
     set_ata_string(s->disk.identify, 10, 10, "NANO1G0001");
     set_ata_string(s->disk.identify, 23, 4, "0.1");
     set_ata_string(s->disk.identify, 27, 20, "NANO1G UNICORN DISK");
-    set_word(s->disk.identify, 47, 0x8001u);
+    set_word(s->disk.identify, 47, 0x8000u | ATA_MULTIPLE_MAX_SECTORS);
     set_word(s->disk.identify, 49, 0x0700u); /* DMA, LBA, and IORDY supported. */
     set_word(s->disk.identify, 51, 0x0200u);
     set_word(s->disk.identify, 52, 0x0200u);
@@ -124,7 +127,7 @@ static void build_identify(n1g_state_t *s) {
     set_word(s->disk.identify, 56, 63u);
     set_word(s->disk.identify, 57, (uint16_t)(sectors & 0xffffu));
     set_word(s->disk.identify, 58, (uint16_t)(sectors >> 16));
-    set_word(s->disk.identify, 59, 0x0101u);
+    set_word(s->disk.identify, 59, 0x0100u | s->disk.multiple_count);
     set_word(s->disk.identify, 60, (uint16_t)(sectors & 0xffffu));
     set_word(s->disk.identify, 61, (uint16_t)(sectors >> 16));
     set_word(s->disk.identify, 63, 0x0007u);
@@ -143,6 +146,7 @@ static void finish_transfer(n1g_state_t *s, bool raise_irq) {
     s->disk.pio_data_pending = false;
     s->disk.pio_ready_irq = false;
     s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = false;
     s->disk.data_index = 0;
     s->disk.sectors_remaining = 0;
     if (raise_irq) {
@@ -155,6 +159,7 @@ static void schedule_pio_data(n1g_state_t *s, bool raise_irq) {
     s->disk.pio_data_pending = true;
     s->disk.pio_ready_irq = raise_irq;
     s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = false;
     set_ide_irq(s, false);
 }
 
@@ -163,10 +168,12 @@ static void schedule_pio_completion(n1g_state_t *s) {
     s->disk.pio_data_pending = false;
     s->disk.pio_ready_irq = false;
     s->disk.pio_completion_pending = true;
+    s->disk.nondata_pending = false;
     set_ide_irq(s, false);
 }
 
 bool n1g_disk_load(n1g_state_t *s, const char *path) {
+    s->disk.multiple_count = 0;
     if (!path) {
         build_identify(s);
         s->disk.status = ATA_DRDY;
@@ -441,11 +448,70 @@ static void start_dma(n1g_state_t *s, bool write) {
     s->disk.pio_data_pending = false;
     s->disk.pio_ready_irq = false;
     s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = false;
     s->disk.status = ATA_DRDY | ATA_DSC | ATA_DRQ;
     set_ide_irq(s, false);
     schedule_dma(s);
 }
+static void complete_nondata_command(n1g_state_t *s) {
+    uint8_t feature = s->disk.pending_feature;
+    uint8_t error = s->disk.pending_error;
+    if (error == 0 && s->disk.pending_multiple_update) {
+        s->disk.multiple_count = s->disk.pending_multiple_count;
+        build_identify(s);
+    }
+
+    s->disk.error = error;
+    s->disk.status = ATA_DRDY | ATA_DSC | (error != 0 ? ATA_ERR : 0u);
+    s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
+    s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = false;
+    s->disk.pending_multiple_update = false;
+    s->disk.pending_error = 0;
+    s->disk.data_index = 0;
+    s->disk.sectors_remaining = 0;
+    set_ide_irq(s, true);
+    if (s->opts.verbose) {
+        n1g_info(s, "ata command complete cmd=0x%02x feature=0x%02x count=%u lba=%u status=0x%02x error=0x%02x",
+                 s->disk.command,
+                 feature,
+                 s->disk.sector_count,
+                 s->disk.selected_lba,
+                 s->disk.status,
+                 s->disk.error);
+    }
+}
+
+static void schedule_nondata_command(n1g_state_t *s,
+                                     uint8_t error,
+                                     bool update_multiple,
+                                     uint8_t multiple_count) {
+    s->disk.pending_feature = s->disk.error;
+    s->disk.pending_error = error;
+    s->disk.pending_multiple_update = update_multiple;
+    s->disk.pending_multiple_count = multiple_count;
+    s->disk.status = ATA_BSY;
+    s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
+    s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = true;
+    s->disk.dma_pending = false;
+    s->disk.data_index = 0;
+    s->disk.sectors_remaining = 0;
+    set_ide_irq(s, false);
+}
+
+static void schedule_command_abort(n1g_state_t *s) {
+    schedule_nondata_command(s, ATA_ERROR_ABORT, false, 0);
+}
+
 void n1g_disk_tick(n1g_state_t *s) {
+    if (s->disk.nondata_pending) {
+        complete_nondata_command(s);
+    }
     if (s->disk.pio_completion_pending) {
         finish_transfer(s, true);
     }
@@ -457,27 +523,6 @@ void n1g_disk_tick(n1g_state_t *s) {
     }
     if (s->disk.dma_pending) {
         complete_dma_transfer(s);
-    }
-}
-
-static void complete_nondata_command(n1g_state_t *s) {
-    uint8_t feature = s->disk.error;
-    s->disk.error = 0;
-    s->disk.status = ATA_DRDY | ATA_DSC;
-    s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
-    s->disk.pio_data_pending = false;
-    s->disk.pio_ready_irq = false;
-    s->disk.pio_completion_pending = false;
-    s->disk.data_index = 0;
-    s->disk.sectors_remaining = 0;
-    set_ide_irq(s, true);
-    if (s->opts.verbose) {
-        n1g_info(s, "ata command complete cmd=0x%02x feature=0x%02x count=%u lba=%u status=0x%02x",
-                 s->disk.command,
-                 feature,
-                 s->disk.sector_count,
-                 s->disk.selected_lba,
-                 s->disk.status);
     }
 }
 
@@ -642,34 +687,46 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
         if (s->disk.command == ATA_CMD_IDENTIFY_DEVICE) {
             start_identify(s);
         } else if (s->disk.command == ATA_CMD_READ_SECTORS ||
-                   s->disk.command == ATA_CMD_READ_SECTORS_EXT ||
-                   s->disk.command == ATA_CMD_READ_MULTIPLE) {
+                   s->disk.command == ATA_CMD_READ_SECTORS_EXT) {
             start_read(s);
+        } else if (s->disk.command == ATA_CMD_READ_MULTIPLE) {
+            if (s->disk.multiple_count == 0) {
+                schedule_command_abort(s);
+            } else {
+                start_read(s);
+            }
         } else if (s->disk.command == ATA_CMD_WRITE_SECTORS ||
-                   s->disk.command == ATA_CMD_WRITE_SECTORS_EXT ||
-                   s->disk.command == ATA_CMD_WRITE_MULTIPLE) {
+                   s->disk.command == ATA_CMD_WRITE_SECTORS_EXT) {
             start_write(s);
+        } else if (s->disk.command == ATA_CMD_WRITE_MULTIPLE) {
+            if (s->disk.multiple_count == 0) {
+                schedule_command_abort(s);
+            } else {
+                start_write(s);
+            }
         } else if (s->disk.command == ATA_CMD_READ_DMA ||
                    s->disk.command == ATA_CMD_READ_DMA_NO_RETRY) {
             start_dma(s, false);
         } else if (s->disk.command == ATA_CMD_WRITE_DMA ||
                    s->disk.command == ATA_CMD_WRITE_DMA_NO_RETRY) {
             start_dma(s, true);
+        } else if (s->disk.command == ATA_CMD_SET_MULTIPLE_MODE) {
+            uint8_t count = s->disk.sector_count;
+            bool valid = count == 0 ||
+                         (count <= ATA_MULTIPLE_MAX_SECTORS && (count & (count - 1u)) == 0);
+            if (valid) {
+                schedule_nondata_command(s, 0, true, count);
+            } else {
+                schedule_command_abort(s);
+            }
         } else if (s->disk.command == ATA_CMD_SET_FEATURES ||
-                   s->disk.command == ATA_CMD_SET_MULTIPLE_MODE ||
                    s->disk.command == ATA_CMD_STANDBY_IMMEDIATE ||
                    s->disk.command == ATA_CMD_FLUSH_CACHE) {
-            complete_nondata_command(s);
+            schedule_nondata_command(s, 0, false, 0);
         } else {
-            s->disk.error = 0x04u;
-            s->disk.status = ATA_DRDY | ATA_ERR;
-            s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
-            s->disk.pio_data_pending = false;
-            s->disk.pio_ready_irq = false;
-            s->disk.pio_completion_pending = false;
-            set_ide_irq(s, true);
+            schedule_command_abort(s);
             if (s->opts.verbose) {
-                n1g_info(s, "ata unsupported cmd=0x%02x lba=%u count=%u status=0x%02x",
+                n1g_info(s, "ata unsupported cmd=0x%02x lba=%u count=%u status=0x%02x pending-abort",
                          s->disk.command,
                          s->disk.selected_lba,
                          s->disk.sector_count,

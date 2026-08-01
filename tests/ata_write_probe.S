@@ -14,7 +14,7 @@ _start:
     str r2, [r0, #0x14]
     mov r2, #0xe0
     str r2, [r0, #0x18]
-    mov r2, #0xc5
+    mov r2, #0x30
     str r2, [r0, #0x1c]
 
     ldr r3, [r0, #0x1c]

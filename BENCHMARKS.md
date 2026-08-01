@@ -7,6 +7,29 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: ATA non-data phases and multiple-mode negotiation
+
+SET FEATURES, SET MULTIPLE MODE, STANDBY IMMEDIATE, FLUSH CACHE, and rejected
+commands previously completed synchronously inside the command-register write.
+They now expose BSY immediately, complete on the next device tick, and raise a
+completion IRQ that a Status read acknowledges. Rejected commands finish with
+ERR and ABRT instead of publishing an immediate error state.
+
+The disk now resets with multiple mode disabled and advertises word 59 as
+`0x0100`. A valid SET MULTIPLE MODE count of one changes it to `0x0101`; count
+zero disables the mode, and a count above IDENTIFY word 47's advertised maximum
+is rejected without changing the active setting. READ/WRITE MULTIPLE commands
+ABRT until a successful nonzero negotiation.
+
+`smoke_ata_nondata_phase` observes SET FEATURES transition from `0x80` to
+`0x50`, completion IRQ assertion, Status acknowledgement, and a clear Error
+register. `smoke_ata_multiple_mode` verifies the disabled-command ABRT path,
+word 59 before and after negotiation, successful READ MULTIPLE data, and state
+preservation after an invalid count. All ten focused ATA tests passed. Eight
+firmware-level checks also passed, including Apple menu navigation, Apple
+audio, Apple no-HLE/handoff paths, and Rockbox boot, core, and menu tests.
+The final serial regression gate passed all 61 tests in 498.73 seconds.
+
 ## 2026-08-02: ATA PIO data-out phase timing
 
 PIO writes previously exposed `DRQ+IRQ` synchronously with the command write,
