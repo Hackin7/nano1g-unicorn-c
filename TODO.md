@@ -89,8 +89,8 @@ all intended disk changes persist across clean emulator restarts.
       registers.
 - [ ] Complete I2S format, clock, FIFO, and DMA pacing semantics used by Apple.
 - [x] Add a host audio sink with bounded buffering and deterministic shutdown.
-- [ ] Handle underruns, sample-rate changes, pause/resume, seek, and track
-      transitions.
+- [x] Handle device-level underruns, sample-rate changes, and pause/resume.
+- [ ] Verify seeking and track transitions through the firmware and host sink.
 - [x] Expose useful audio state and underrun counters through `status.json`.
 - [ ] Verify audible Apple playback from the seeded media image.
 - [ ] Verify audible Rockbox MP3 playback through the same hardware path.

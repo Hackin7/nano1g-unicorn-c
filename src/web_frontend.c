@@ -85,7 +85,7 @@ static const char index_html[] =
 "const restart_btn=document.getElementById('restart-btn');"
 "const audio_enable=document.getElementById('audio-enable');"
 "const ipod=document.getElementById('ipod-container');"
-"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_polling=false;"
+"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_rate=0,audio_stream=-1,audio_polling=false,audio_sources=new Set();"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
@@ -114,11 +114,12 @@ static const char index_html[] =
 "wheel.onwheel=e=>{e.preventDefault();wheel_step(e.deltaY);};"
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
 "function read_u64(v,o){return v.getUint32(o,true)+v.getUint32(o+4,true)*4294967296;}"
-"async function pump_audio(){if(!audio_enable.checked||!audio_ctx||audio_polling||audio_next-audio_ctx.currentTime>.2)return;audio_polling=true;try{const r=await fetch('/audio.pcm?cursor='+Math.floor(audio_cursor),{cache:'no-store'});const b=await r.arrayBuffer();if(b.byteLength<32)return;const v=new DataView(b);if(v.getUint32(0,true)!==0x3141314e)return;const rate=v.getUint32(4,true),start=read_u64(v,8),next=read_u64(v,16),count=v.getUint32(24,true);audio_cursor=next;if(count<2||b.byteLength<32+count*2)return;const frames=Math.floor(count/2),ab=audio_ctx.createBuffer(2,frames,rate),l=ab.getChannelData(0),rr=ab.getChannelData(1),pcm=new DataView(b,32);for(let i=0;i<frames;i++){l[i]=pcm.getInt16(i*4,true)/32768;rr[i]=pcm.getInt16(i*4+2,true)/32768;}const src=audio_ctx.createBufferSource();src.buffer=ab;src.connect(audio_ctx.destination);let when=Math.max(audio_ctx.currentTime+.03,audio_next);if(when>audio_ctx.currentTime+.25)when=audio_ctx.currentTime+.03;src.start(when);audio_next=when+frames/rate;}catch(e){set_status('Audio failed: '+e.message);}finally{audio_polling=false;}}"
-"audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;audio_next=audio_ctx.currentTime+.04;if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else if(audio_timer){clearInterval(audio_timer);audio_timer=null;}};"
+"function reset_audio_queue(){for(const src of audio_sources){try{src.stop();}catch(e){}}audio_sources.clear();if(audio_ctx)audio_next=audio_ctx.currentTime+.04;}"
+"async function pump_audio(){if(!audio_enable.checked||!audio_ctx||audio_polling||audio_next-audio_ctx.currentTime>.2)return;audio_polling=true;try{const requested=Math.floor(audio_cursor),r=await fetch('/audio.pcm?cursor='+requested,{cache:'no-store'}),b=await r.arrayBuffer();if(b.byteLength<32)return;const v=new DataView(b);if(v.getUint32(0,true)!==0x3141314e)return;const rate=v.getUint32(4,true),start=read_u64(v,8),next=read_u64(v,16),count=v.getUint32(24,true),stream=v.getUint32(28,true)>>>1;if(stream!==audio_stream||rate!==audio_rate||start!==requested){reset_audio_queue();audio_stream=stream;audio_rate=rate;}audio_cursor=next;if(count<2||b.byteLength<32+count*2)return;const frames=Math.floor(count/2),ab=audio_ctx.createBuffer(2,frames,rate),l=ab.getChannelData(0),rr=ab.getChannelData(1),pcm=new DataView(b,32);for(let i=0;i<frames;i++){l[i]=pcm.getInt16(i*4,true)/32768;rr[i]=pcm.getInt16(i*4+2,true)/32768;}const src=audio_ctx.createBufferSource();src.buffer=ab;src.connect(audio_ctx.destination);src.onended=()=>audio_sources.delete(src);audio_sources.add(src);let when=Math.max(audio_ctx.currentTime+.03,audio_next);if(when>audio_ctx.currentTime+.25)when=audio_ctx.currentTime+.03;src.start(when);audio_next=when+frames/rate;}catch(e){set_status('Audio failed: '+e.message);}finally{audio_polling=false;}}"
+"audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;reset_audio_queue();if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else{if(audio_timer)clearInterval(audio_timer);audio_timer=null;reset_audio_queue();if(audio_ctx)await audio_ctx.suspend();}};"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;if(audio_ctx)audio_next=audio_ctx.currentTime+.04;}audio_latest=s.audio_cursor;"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;"
 "if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -320,8 +321,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,"
                      "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
                      "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
-                     "\"audio_cursor\":%llu,\"audio_rate\":%u,\"audio_output\":%s,"
-                     "\"audio_nonzero\":%llu,\"audio_silenced\":%llu,\"audio_peak\":%u,\"audio_underruns\":%llu,\"audio_dropped\":%llu,"
+                     "\"audio_cursor\":%llu,\"audio_rate\":%u,\"audio_stream\":%u,\"audio_stream_start\":%llu,\"audio_output\":%s,"
+                     "\"audio_nonzero\":%llu,\"audio_silenced\":%llu,\"audio_peak\":%u,\"audio_underruns\":%llu,\"audio_underrun_samples\":%llu,\"audio_overruns\":%llu,\"audio_dropped\":%llu,"
                      "\"i2c_txns\":%llu,\"i2c_last\":\"addr=0x%02x op=%s count=%u data=0x%08x\","
                      "\"wm8975\":\"writes=%llu resets=%llu mode=%s output=%u muted=%u rate=%u control=0x%03x power=0x%03x out1=0x%03x/0x%03x\","
                      "\"input_events\":%llu,\"input\":\"%s\","
@@ -358,12 +359,16 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)(s->dma.ch[0].completions + s->dma.ch[1].completions + s->dma.ch[2].completions + s->dma.ch[3].completions),
                      (unsigned long long)(s->dma.ch[0].bytes_pushed + s->dma.ch[1].bytes_pushed + s->dma.ch[2].bytes_pushed + s->dma.ch[3].bytes_pushed),
                      (unsigned long long)s->i2s.pcm_produced_halfwords,
-                     s->i2c.wm8975_sample_rate != 0u ? s->i2c.wm8975_sample_rate : 44100u,
+                     s->i2s.pcm_sample_rate != 0u ? s->i2s.pcm_sample_rate : 44100u,
+                     s->i2s.pcm_stream_id,
+                     (unsigned long long)s->i2s.pcm_stream_start_halfword,
                      s->i2c.wm8975_output_enabled ? "true" : "false",
                      (unsigned long long)s->i2s.pcm_nonzero_halfwords,
                      (unsigned long long)s->i2s.pcm_silenced_halfwords,
                      s->i2s.pcm_peak,
                      (unsigned long long)s->i2s.underruns,
+                     (unsigned long long)s->i2s.underrun_halfwords,
+                     (unsigned long long)s->i2s.tx_overruns,
                      (unsigned long long)s->i2s.host_dropped_halfwords,
                      (unsigned long long)s->i2c.transactions,
                      s->i2c.last_addr,
@@ -566,6 +571,9 @@ static bool send_audio_pcm(n1g_state_t *s, intptr_t fd, const char *query) {
     (void)query_u64(query, "cursor", &cursor);
     uint64_t oldest = produced > N1G_AUDIO_RING_HALFWORDS ?
                       produced - N1G_AUDIO_RING_HALFWORDS : 0u;
+    if (oldest < s->i2s.pcm_stream_start_halfword) {
+        oldest = s->i2s.pcm_stream_start_halfword;
+    }
     oldest = (oldest + 1u) & ~1ull;
     if (cursor < oldest) {
         s->i2s.host_dropped_halfwords += oldest - cursor;
@@ -590,11 +598,12 @@ static bool send_audio_pcm(n1g_state_t *s, intptr_t fd, const char *query) {
         return send_response(fd, "500 Internal Server Error", "text/plain", msg, sizeof(msg) - 1u);
     }
     put32(body, 0x3141314eu); /* N1A1 */
-    put32(body + 4, s->i2c.wm8975_sample_rate != 0u ? s->i2c.wm8975_sample_rate : 44100u);
+    put32(body + 4, s->i2s.pcm_sample_rate != 0u ? s->i2s.pcm_sample_rate : 44100u);
     put64(body + 8, cursor);
     put64(body + 16, cursor + count);
     put32(body + 24, count);
-    put32(body + 28, s->i2c.wm8975_output_enabled ? 1u : 0u);
+    put32(body + 28, (s->i2s.pcm_stream_id << 1u) |
+                     (s->i2c.wm8975_output_enabled ? 1u : 0u));
     for (uint32_t i = 0; i < count; i++) {
         put16(body + 32u + i * 2u,
               (uint16_t)s->i2s.pcm_ring[(cursor + i) % N1G_AUDIO_RING_HALFWORDS]);

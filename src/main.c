@@ -590,14 +590,17 @@ run_image:
              (unsigned long long)(s.dma.ch[0].completions + s.dma.ch[1].completions + s.dma.ch[2].completions + s.dma.ch[3].completions),
              (unsigned long long)(s.dma.ch[0].bytes_pushed + s.dma.ch[1].bytes_pushed + s.dma.ch[2].bytes_pushed + s.dma.ch[3].bytes_pushed));
     n1g_info(&s,
-             "audio_output enabled=%u rate=%u pcm=%llu nonzero=%llu silenced=%llu peak=%u underruns=%llu dropped=%llu",
+             "audio_output enabled=%u rate=%u stream=%u pcm=%llu nonzero=%llu silenced=%llu peak=%u underruns=%llu underrun_samples=%llu overruns=%llu dropped=%llu",
              s.i2c.wm8975_output_enabled ? 1u : 0u,
-             s.i2c.wm8975_sample_rate != 0u ? s.i2c.wm8975_sample_rate : 44100u,
+             s.i2s.pcm_sample_rate != 0u ? s.i2s.pcm_sample_rate : 44100u,
+             s.i2s.pcm_stream_id,
              (unsigned long long)s.i2s.pcm_produced_halfwords,
              (unsigned long long)s.i2s.pcm_nonzero_halfwords,
              (unsigned long long)s.i2s.pcm_silenced_halfwords,
              s.i2s.pcm_peak,
              (unsigned long long)s.i2s.underruns,
+             (unsigned long long)s.i2s.underrun_halfwords,
+             (unsigned long long)s.i2s.tx_overruns,
              (unsigned long long)s.i2s.host_dropped_halfwords);
     if (s.opts.verbose) {
         for (uint32_t addr = 0; addr < 128u; addr++) {

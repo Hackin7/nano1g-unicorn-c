@@ -48,21 +48,45 @@ static int16_t codec_output_sample(const n1g_state_t *s, int16_t sample, uint32_
     return (int16_t)scaled;
 }
 
-static void clear_tx_fifo(n1g_state_t *s) {
+static void clear_tx_fifo(n1g_state_t *s, bool reset_clock) {
     s->i2s.tx_fill = 0;
     s->i2s.tx_head = 0;
     s->i2s.tx_tail = 0;
-    s->i2s.drain_acc = 0;
+    if (reset_clock) {
+        s->i2s.drain_acc = 0;
+        s->i2s.underrun_active = false;
+    }
 }
 
 static void clear_pcm_ring(n1g_state_t *s) {
     memset(s->i2s.pcm_ring, 0, sizeof(s->i2s.pcm_ring));
     s->i2s.pcm_produced_halfwords = 0;
+    s->i2s.pcm_stream_start_halfword = 0;
     s->i2s.pcm_nonzero_halfwords = 0;
     s->i2s.pcm_silenced_halfwords = 0;
     s->i2s.underruns = 0;
+    s->i2s.underrun_halfwords = 0;
     s->i2s.host_dropped_halfwords = 0;
     s->i2s.pcm_peak = 0;
+    s->i2s.pcm_sample_rate = sample_rate(s);
+    s->i2s.pcm_stream_id++;
+}
+
+static void sync_pcm_rate(n1g_state_t *s) {
+    uint32_t rate = sample_rate(s);
+    if (s->i2s.pcm_sample_rate == 0u) {
+        s->i2s.pcm_sample_rate = rate;
+        return;
+    }
+    if (s->i2s.pcm_sample_rate == rate) {
+        return;
+    }
+    s->i2s.pcm_sample_rate = rate;
+    s->i2s.pcm_stream_start_halfword =
+        (s->i2s.pcm_produced_halfwords + 1u) & ~1ull;
+    s->i2s.pcm_stream_id++;
+    s->i2s.drain_acc = 0;
+    s->i2s.underrun_active = false;
 }
 
 static void i2s_update_irq(n1g_state_t *s) {
@@ -112,6 +136,8 @@ void n1g_dev_i2s_push_tx(n1g_state_t *s, uint32_t size, uint32_t value) {
             s->i2s.tx_tail = (s->i2s.tx_tail + 1u) % N1G_I2S_TX_DEPTH;
             s->i2s.tx_fill++;
             s->i2s.tx_halfwords++;
+        } else {
+            s->i2s.tx_overruns++;
         }
     }
     i2s_update_irq(s);
@@ -125,13 +151,20 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
             cfg_logs++;
             n1g_log(s, "i2s config write value=0x%08x tx_fill=%u", value, s->i2s.tx_fill);
         }
+        uint32_t old_config = s->i2s.config;
         if (value & IIS_RESET) {
-            clear_tx_fifo(s);
+            clear_tx_fifo(s, true);
             clear_pcm_ring(s);
             s->i2s.tx_halfwords = 0;
             s->i2s.tx_drained_halfwords = 0;
+            s->i2s.tx_overruns = 0;
         }
         s->i2s.config = value & ~IIS_RESET;
+        if ((old_config & IIS_TXFIFOEN) != 0u &&
+            (s->i2s.config & IIS_TXFIFOEN) == 0u) {
+            s->i2s.drain_acc = 0;
+            s->i2s.underrun_active = false;
+        }
         i2s_update_irq(s);
         break;
     }
@@ -140,7 +173,7 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
         break;
     case 0x0c:
         if (value & IIS_FIFO_TXCLR) {
-            clear_tx_fifo(s);
+            clear_tx_fifo(s, false);
         }
         s->i2s.fifo_cfg = value & ~(IIS_FIFO_TXCLR | IIS_FIFO_RXCLR) & 0xffu;
         i2s_update_irq(s);
@@ -155,18 +188,33 @@ void n1g_dev_i2s_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
 
 void n1g_dev_i2s_tick(n1g_state_t *s) {
     if ((s->i2s.config & IIS_TXFIFOEN) == 0) {
+        s->i2s.drain_acc = 0;
+        s->i2s.underrun_active = false;
         return;
     }
-    s->i2s.drain_acc += (uint64_t)s->opts.rtc_usec_per_tick * sample_rate(s) * 2u;
-    while (s->i2s.drain_acc >= 1000000u && s->i2s.tx_fill > 0) {
+    sync_pcm_rate(s);
+    s->i2s.drain_acc +=
+        (uint64_t)s->opts.rtc_usec_per_tick * s->i2s.pcm_sample_rate * 2u;
+    while (s->i2s.drain_acc >= 1000000u) {
         s->i2s.drain_acc -= 1000000u;
-        int16_t input = s->i2s.tx_fifo[s->i2s.tx_head];
-        uint32_t channel = (uint32_t)(s->i2s.tx_drained_halfwords & 1u);
-        int16_t output = codec_output_sample(s, input, channel);
-        s->i2s.tx_head = (s->i2s.tx_head + 1u) % N1G_I2S_TX_DEPTH;
-        s->i2s.tx_fill--;
-        s->i2s.tx_drained_halfwords++;
         uint64_t produced = s->i2s.pcm_produced_halfwords;
+        uint32_t channel = (uint32_t)(produced & 1u);
+        int16_t input = 0;
+        int16_t output = 0;
+        if (s->i2s.tx_fill > 0u) {
+            input = s->i2s.tx_fifo[s->i2s.tx_head];
+            output = codec_output_sample(s, input, channel);
+            s->i2s.tx_head = (s->i2s.tx_head + 1u) % N1G_I2S_TX_DEPTH;
+            s->i2s.tx_fill--;
+            s->i2s.tx_drained_halfwords++;
+            s->i2s.underrun_active = false;
+        } else {
+            if (!s->i2s.underrun_active) {
+                s->i2s.underruns++;
+                s->i2s.underrun_active = true;
+            }
+            s->i2s.underrun_halfwords++;
+        }
         s->i2s.pcm_ring[produced % N1G_AUDIO_RING_HALFWORDS] = output;
         s->i2s.pcm_produced_halfwords = produced + 1u;
         if (output != 0) {
@@ -179,12 +227,6 @@ void n1g_dev_i2s_tick(n1g_state_t *s) {
         } else if (input != 0) {
             s->i2s.pcm_silenced_halfwords++;
         }
-    }
-    if (s->i2s.tx_fill == 0) {
-        if (s->i2s.drain_acc >= 1000000u) {
-            s->i2s.underruns++;
-        }
-        s->i2s.drain_acc = 0;
     }
     i2s_update_irq(s);
 }

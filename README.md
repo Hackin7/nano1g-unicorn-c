@@ -248,8 +248,11 @@ Implemented foundation:
 - The modeled DMA-to-I2S path preserves RAM-backed 16-bit stereo samples,
   drains the TX FIFO against the codec-selected guest sample rate, applies the
   WM8975 output power/routing/mute/volume state, and raises DMA completion
-  status. `audio_path_unit` and `i2c_codec_unit` cover that device-level path;
-  the Apple playback smoke verifies nonzero PCM from the official firmware.
+  status. Empty enabled FIFOs preserve fractional clock phase and emit counted
+  silence; codec rate changes start a new PCM stream epoch so the browser drops
+  incompatible queued buffers. `audio_path_unit` and `i2c_codec_unit` cover
+  that device-level path; the Apple playback smoke verifies nonzero PCM from
+  the official firmware.
 - The standalone Rockbox bootloader fixture runs from fast RAM and reaches a
   nonblack framebuffer without synthetic sysinfo handoff state.
 - The local `../artifacts/firmware/bootloader.bin` fixture is useful as a

@@ -184,15 +184,21 @@ typedef struct n1g_i2s {
     uint32_t tx_tail;
     int16_t tx_fifo[N1G_I2S_TX_DEPTH];
     uint64_t drain_acc; /* microsecond-scaled drain accumulator */
+    bool underrun_active;
     uint64_t tx_halfwords; /* total halfwords accepted (diagnostics) */
     uint64_t tx_drained_halfwords;
+    uint64_t tx_overruns;
     int16_t pcm_ring[N1G_AUDIO_RING_HALFWORDS];
     uint64_t pcm_produced_halfwords;
+    uint64_t pcm_stream_start_halfword;
     uint64_t pcm_nonzero_halfwords;
     uint64_t pcm_silenced_halfwords;
     uint64_t underruns;
+    uint64_t underrun_halfwords;
     uint64_t host_dropped_halfwords;
     uint32_t pcm_peak;
+    uint32_t pcm_sample_rate;
+    uint32_t pcm_stream_id;
 } n1g_i2s_t;
 
 typedef struct n1g_serial_channel {
