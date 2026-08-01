@@ -2,6 +2,7 @@
 
 #include "nano1g/cpu_unicorn.h"
 #include "nano1g/devices.h"
+#include "nano1g/input_script.h"
 #include "nano1g/map.h"
 #include "nano1g/ram.h"
 #include "nano1g/trace.h"
@@ -82,7 +83,7 @@ static const char index_html[] =
 "const firmware_select=document.getElementById('firmware-select');"
 "const restart_btn=document.getElementById('restart-btn');"
 "const ipod=document.getElementById('ipod-container');"
-"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,guest_insns=0;"
+"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false;"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
@@ -90,20 +91,7 @@ static const char index_html[] =
 "firmware_select.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();restart_selected();}};"
 "async function restart_selected(){set_status('Restarting '+firmware_select.value+'...');seq=-1;select_dirty=false;try{const r=await fetch('/control?restart='+encodeURIComponent(firmware_select.value),{cache:'no-store'});if(!r.ok)set_status('Restart failed');}catch(e){set_status('Restart failed: '+e.message);}}"
 "restart_btn.onclick=e=>{e.preventDefault();restart_selected();};"
-"function button_url(name,state){return '/input?button='+encodeURIComponent(name)+'&state='+state;}"
 "function tap_url(name){return '/input?button='+encodeURIComponent(name)+'&tap=1';}"
-/* Rockbox needs a minimum guest-instruction span between button down and up
- * to register a short-press "enter" (roughly 20000-50000 device ticks,
- * calibrated empirically; see BENCHMARKS.md). Emulator throughput varies a
- * lot depending on host load, so a fixed wall-clock release delay is not
- * reliable - instead poll actual guest_insns progress (from the same status
- * feed driving the FPS/guest counters) and only release once enough
- * emulated time has genuinely elapsed, with a wall-clock deadline as a
- * fallback so a button can never get stuck down if the emulator stalls. */
-"const MIN_PRESS_INSNS=20000000;"
-"function release_after_progress(name){const baseline=guest_insns,deadline=performance.now()+5000;"
-"const poll=()=>{if(guest_insns-baseline>=MIN_PRESS_INSNS||performance.now()>deadline){send_input(button_url(name,'up'));}else{setTimeout(poll,40);}};"
-"setTimeout(poll,40);}"
 "function bind_button(selector,name){const el=document.querySelector(selector);let pressed=false;"
 "const down=e=>{e.preventDefault();pressed=true;el.classList.add('active');};"
 "const up=e=>{e.preventDefault();if(!pressed)return;pressed=false;el.classList.remove('active');send_input(tap_url(name));};"
@@ -124,9 +112,9 @@ static const char index_html[] =
 "wheel.onwheel=e=>{e.preventDefault();wheel_step(e.deltaY);};"
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
-"async function tick(){try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"guest_insns=s.guest_insns;set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',s.i2s_tx.toLocaleString()+'/'+s.dma_audio_starts.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
-"if(s.frame_seq!==seq){seq=s.frame_seq;draw_frame(seq);}}catch(e){set_status('Offline');text('running','offline');}}"
+"async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',s.i2s_tx.toLocaleString()+'/'+s.dma_audio_starts.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);"
+"if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
 
@@ -558,7 +546,7 @@ static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
             (void)snprintf(key, sizeof(key), "button=%s", buttons[i]);
             if (query_has(query, key)) {
                 if (query_has(query, "tap=1")) {
-                    ok = n1g_dev_opto_tap(s, buttons[i], 50000u);
+                    ok = n1g_dev_opto_tap(s, buttons[i], N1G_INPUT_HOLD_TICKS);
                 } else {
                     ok = n1g_dev_opto_button(s, buttons[i], !query_has(query, "state=up"));
                 }
