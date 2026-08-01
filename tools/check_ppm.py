@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import sys
 
 
@@ -31,18 +32,35 @@ def main():
     parser.add_argument("--min-nonblack", type=int, default=1)
     parser.add_argument("--max-nonblack", type=int, default=None)
     parser.add_argument("--min-unique", type=int, default=1)
+    parser.add_argument("--expected-width", type=int, default=None)
+    parser.add_argument("--expected-height", type=int, default=None)
+    parser.add_argument("--expected-pixel-sha256", default=None)
     args = parser.parse_args()
 
     width, height, data = read_ppm(args.ppm)
     pixels = [data[i:i + 3] for i in range(0, len(data), 3)]
     nonblack = sum(1 for p in pixels if p != b"\x00\x00\x00")
     unique = len(set(pixels))
+    pixel_sha256 = hashlib.sha256(data).hexdigest()
 
     print(
         f"ppm={args.ppm} size={width}x{height} "
-        f"nonblack={nonblack} unique_colors={unique}"
+        f"nonblack={nonblack} unique_colors={unique} "
+        f"pixel_sha256={pixel_sha256}"
     )
 
+    if args.expected_width is not None and width != args.expected_width:
+        print(
+            f"width {width} does not match expected {args.expected_width}",
+            file=sys.stderr,
+        )
+        return 1
+    if args.expected_height is not None and height != args.expected_height:
+        print(
+            f"height {height} does not match expected {args.expected_height}",
+            file=sys.stderr,
+        )
+        return 1
     if nonblack < args.min_nonblack:
         print(
             f"nonblack pixel count {nonblack} below required {args.min_nonblack}",
@@ -58,6 +76,16 @@ def main():
     if unique < args.min_unique:
         print(
             f"unique color count {unique} below required {args.min_unique}",
+            file=sys.stderr,
+        )
+        return 1
+    if (
+        args.expected_pixel_sha256 is not None
+        and pixel_sha256 != args.expected_pixel_sha256.lower()
+    ):
+        print(
+            f"pixel SHA-256 {pixel_sha256} does not match expected "
+            f"{args.expected_pixel_sha256.lower()}",
             file=sys.stderr,
         )
         return 1
