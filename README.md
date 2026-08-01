@@ -290,6 +290,11 @@ Implemented foundation:
   ABRT. SET MULTIPLE MODE validates the requested block count, supports the
   ATA-defined zero-count disable operation, and updates IDENTIFY word 59. A
   native ARM probe covers disabled, enabled, and rejected negotiation paths.
+- PIO and DMA requests are bounded by the capacity reported in IDENTIFY words
+  60-61. Transfers that begin beyond the medium or cross its final sector stop
+  with IDNF and an IRQ, while the taskfile LBA/count identify the first failing
+  sector. DMA copies only the valid prefix instead of fabricating data beyond
+  the advertised medium.
 - DMA-to-LCD2 transfers route through the modeled LCD2 register window and are
   covered by a native ARM smoke that produces real PPM pixels.
 - The I2C/PMU path models basic PCF register pointer, default reads, guest

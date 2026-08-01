@@ -88,7 +88,9 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
 - [x] Verify the Apple firmware reads the seeded iTunesDB and media files.
 - [ ] Verify playlists, tracks, metadata, seeking, and play counts.
 - [ ] Verify database and preference updates survive a disk snapshot reload.
-- [ ] Add corruption and out-of-range LBA tests.
+- [x] Reject initial and boundary-crossing PIO/DMA requests beyond IDENTIFY
+      capacity with IDNF and failing-LBA taskfile state.
+- [ ] Add corrupt-sector and media-error injection tests.
 
 Completion signal: Apple can browse and update a realistic media library, and
 all intended disk changes persist across clean emulator restarts.

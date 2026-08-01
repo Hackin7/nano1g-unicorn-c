@@ -7,6 +7,24 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: ATA media bounds and failing-LBA taskfile state
+
+PIO reads beyond the backing medium previously returned `0xffff`, PIO writes
+were silently dropped, and DMA reads synthesized `0xff` bytes while every path
+reported success. The model now bounds 28-bit media commands by the capacity
+reported in IDENTIFY words 60-61. An initially invalid LBA enters BSY and
+completes with `ERR+IDNF`; a multi-sector command transfers valid sectors, then
+terminates at the first invalid LBA. LBA, Device, and Sector Count taskfile
+registers advance with completed sectors and retain the failing address and
+residual count on error. DMA copies only the valid prefix and reports controller
+error state rather than touching RAM beyond the medium.
+
+`smoke_ata_bounds` executes initial-invalid and boundary-crossing PIO read,
+PIO write, and DMA read cases as native ARM code against a one-sector disk. It
+checks BSY/DRQ/error phases, IDNF, IRQ delivery, failing LBA 1, residual count
+1, a 512-byte DMA-address advance, and the transferred prefix. All eleven ATA
+tests passed, followed by all 62 registered regressions in 485.34 seconds.
+
 ## 2026-08-02: ATA non-data phases and multiple-mode negotiation
 
 SET FEATURES, SET MULTIPLE MODE, STANDBY IMMEDIATE, FLUSH CACHE, and rejected

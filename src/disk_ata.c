@@ -32,6 +32,7 @@
 #define ATA_CMD_IDENTIFY_DEVICE 0xecu
 
 #define ATA_ERROR_ABORT 0x04u
+#define ATA_ERROR_ID_NOT_FOUND 0x10u
 #define ATA_MULTIPLE_MAX_SECTORS 1u
 
 #define PP_ATA_DATA 0x1e0u
@@ -63,6 +64,11 @@ typedef enum n1g_ata_transfer {
     N1G_ATA_TRANSFER_DMA_WRITE = 5
 } n1g_ata_transfer_t;
 
+static void schedule_nondata_command(n1g_state_t *s,
+                                     uint8_t error,
+                                     bool update_multiple,
+                                     uint8_t multiple_count);
+
 static void set_word(uint8_t *buf, uint32_t index, uint16_t value) {
     buf[index * 2u] = (uint8_t)(value & 0xffu);
     buf[index * 2u + 1u] = (uint8_t)(value >> 8);
@@ -70,6 +76,21 @@ static void set_word(uint8_t *buf, uint32_t index, uint16_t value) {
 
 static uint16_t get_word(const uint8_t *buf, uint32_t index) {
     return (uint16_t)(buf[index * 2u] | ((uint16_t)buf[index * 2u + 1u] << 8));
+}
+
+static uint32_t disk_sector_count(const n1g_state_t *s) {
+    uint64_t sectors = s->disk.size / 512u;
+    if (sectors == 0) {
+        sectors = 1;
+    }
+    if (sectors > 0x0fffffffu) {
+        sectors = 0x0fffffffu;
+    }
+    return (uint32_t)sectors;
+}
+
+static bool lba_in_range(const n1g_state_t *s, uint32_t lba) {
+    return lba < disk_sector_count(s);
 }
 
 static void set_ide_irq(n1g_state_t *s, bool pending) {
@@ -100,13 +121,7 @@ static void set_ata_string(uint8_t *buf, uint32_t word_index, uint32_t word_coun
 
 static void build_identify(n1g_state_t *s) {
     memset(s->disk.identify, 0, sizeof(s->disk.identify));
-    uint32_t sectors = (uint32_t)(s->disk.size / 512u);
-    if (sectors == 0) {
-        sectors = 1;
-    }
-    if (sectors > 0x0fffffffu) {
-        sectors = 0x0fffffffu;
-    }
+    uint32_t sectors = disk_sector_count(s);
 
     set_word(s->disk.identify, 0, 0x0040u);  /* Fixed disk. */
     set_word(s->disk.identify, 1, 16383u);
@@ -240,8 +255,14 @@ static uint16_t read_sector_word(n1g_state_t *s) {
         if (s->disk.sectors_remaining > 0) {
             s->disk.sectors_remaining--;
         }
+        s->disk.selected_lba = s->disk.transfer_lba;
+        s->disk.sector_count = (uint8_t)s->disk.sectors_remaining;
+        s->disk.device = (uint8_t)((s->disk.device & 0xf0u) |
+                                   ((s->disk.selected_lba >> 24) & 0x0fu));
         if (s->disk.sectors_remaining == 0) {
             finish_transfer(s, false);
+        } else if (!lba_in_range(s, s->disk.transfer_lba)) {
+            schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
         } else {
             schedule_pio_data(s, true);
         }
@@ -263,8 +284,14 @@ static void write_sector_word(n1g_state_t *s, uint16_t value) {
         if (s->disk.sectors_remaining > 0) {
             s->disk.sectors_remaining--;
         }
+        s->disk.selected_lba = s->disk.transfer_lba;
+        s->disk.sector_count = (uint8_t)s->disk.sectors_remaining;
+        s->disk.device = (uint8_t)((s->disk.device & 0xf0u) |
+                                   ((s->disk.selected_lba >> 24) & 0x0fu));
         if (s->disk.sectors_remaining == 0) {
             schedule_pio_completion(s);
+        } else if (!lba_in_range(s, s->disk.transfer_lba)) {
+            schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
         } else {
             schedule_pio_data(s, true);
         }
@@ -328,6 +355,10 @@ static void start_identify(n1g_state_t *s) {
 
 static void start_read(n1g_state_t *s) {
     uint16_t count = s->disk.sector_count == 0 ? 256u : s->disk.sector_count;
+    if (!lba_in_range(s, s->disk.selected_lba)) {
+        schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
+        return;
+    }
     s->disk.error = 0;
     s->disk.transfer_lba = s->disk.selected_lba;
     s->disk.sectors_remaining = count;
@@ -347,6 +378,10 @@ static void start_read(n1g_state_t *s) {
 
 static void start_write(n1g_state_t *s) {
     uint16_t count = s->disk.sector_count == 0 ? 256u : s->disk.sector_count;
+    if (!lba_in_range(s, s->disk.selected_lba)) {
+        schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
+        return;
+    }
     s->disk.error = 0;
     s->disk.transfer_lba = s->disk.selected_lba;
     s->disk.sectors_remaining = count;
@@ -379,20 +414,26 @@ static void complete_dma_transfer(n1g_state_t *s) {
     }
     s->disk.dma_pending = false;
 
-    size_t bytes = (size_t)s->disk.dma_length + 4u;
-    size_t available = (size_t)s->disk.sectors_remaining * 512u - s->disk.data_index;
-    if (bytes > available) {
-        bytes = available;
+    size_t requested_bytes = (size_t)s->disk.dma_length + 4u;
+    size_t transfer_available = (size_t)s->disk.sectors_remaining * 512u - s->disk.data_index;
+    if (requested_bytes > transfer_available) {
+        requested_bytes = transfer_available;
     }
 
-    uint8_t *ram = n1g_ram_ptr(s, s->disk.dma_addr, bytes);
     size_t disk_off = (size_t)s->disk.transfer_lba * 512u + s->disk.data_index;
+    size_t logical_size = (size_t)disk_sector_count(s) * 512u;
+    size_t bytes = disk_off < logical_size ? logical_size - disk_off : 0;
+    if (bytes > requested_bytes) {
+        bytes = requested_bytes;
+    }
+    bool lba_error = bytes < requested_bytes;
+    uint8_t *ram = n1g_ram_ptr(s, s->disk.dma_addr, bytes);
     if (!ram || bytes == 0) {
         s->disk.dma_status = 1;
-        s->disk.error = 0x04u;
-        s->disk.status = ATA_DRDY | ATA_ERR;
-        s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
-        set_ide_irq(s, true);
+        schedule_nondata_command(s,
+                                 bytes == 0 ? ATA_ERROR_ID_NOT_FOUND : ATA_ERROR_ABORT,
+                                 false,
+                                 0);
         return;
     }
 
@@ -432,14 +473,25 @@ static void complete_dma_transfer(n1g_state_t *s) {
     } else {
         s->disk.sectors_remaining -= (uint16_t)sectors_done;
     }
+    s->disk.selected_lba = s->disk.transfer_lba;
+    s->disk.sector_count = (uint8_t)s->disk.sectors_remaining;
+    s->disk.device = (uint8_t)((s->disk.device & 0xf0u) |
+                               ((s->disk.selected_lba >> 24) & 0x0fu));
 
-    if (s->disk.sectors_remaining == 0) {
+    if (lba_error) {
+        s->disk.dma_status = 1;
+        schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
+    } else if (s->disk.sectors_remaining == 0) {
         finish_transfer(s, true);
     }
 }
 
 static void start_dma(n1g_state_t *s, bool write) {
     uint16_t count = s->disk.sector_count == 0 ? 256u : s->disk.sector_count;
+    if (!lba_in_range(s, s->disk.selected_lba)) {
+        schedule_nondata_command(s, ATA_ERROR_ID_NOT_FOUND, false, 0);
+        return;
+    }
     s->disk.error = 0;
     s->disk.transfer_lba = s->disk.selected_lba;
     s->disk.sectors_remaining = count;
