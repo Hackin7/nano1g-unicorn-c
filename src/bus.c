@@ -48,10 +48,12 @@ static const char *host_profile_mmio_device(uint32_t addr) {
     if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) return "ppcon";
     if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) return "lcd2";
     if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) return "i2s";
+    if (addr >= N1G_PWM_BASE && addr <= N1G_PWM_BASE + 0x3f) return "pwm";
     if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) return "i2c";
     if (addr >= N1G_SERIAL0_BASE && addr < N1G_SERIAL0_BASE + 0x40) return "serial0";
     if (addr >= N1G_SERIAL1_BASE && addr < N1G_SERIAL1_BASE + 0x40) return "serial1";
     if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) return "opto";
+    if (addr >= N1G_DIMMER_BASE && addr <= N1G_DIMMER_BASE + 0xff) return "dimmer";
     if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) return "eide";
     if (addr >= N1G_USB_BASE && addr <= N1G_USB_BASE + 0xfff) return "usb";
     if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) return "memcon";
@@ -190,6 +192,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) {
         return n1g_dev_i2s_read(s, addr - N1G_I2S_BASE, size);
     }
+    if (addr >= N1G_PWM_BASE && addr <= N1G_PWM_BASE + 0x3f) {
+        return n1g_dev_pwm_read(s, addr - N1G_PWM_BASE, size);
+    }
     if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         return n1g_dev_i2c_read(s, addr - N1G_I2C_BASE, size);
     }
@@ -201,6 +206,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     }
     if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) {
         return n1g_dev_opto_read(s, addr - N1G_OPTO_BASE, size);
+    }
+    if (addr >= N1G_DIMMER_BASE && addr <= N1G_DIMMER_BASE + 0xff) {
+        return n1g_dev_dimmer_read(s, addr - N1G_DIMMER_BASE, size);
     }
     if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) {
         return n1g_disk_read(s, addr - N1G_EIDE_BASE, size);
@@ -249,6 +257,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_lcd2_write(s, addr - N1G_LCD2_BASE, size, value);
     } else if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) {
         n1g_dev_i2s_write(s, addr - N1G_I2S_BASE, size, value);
+    } else if (addr >= N1G_PWM_BASE && addr <= N1G_PWM_BASE + 0x3f) {
+        n1g_dev_pwm_write(s, addr - N1G_PWM_BASE, size, value);
     } else if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) {
         n1g_dev_i2c_write(s, addr - N1G_I2C_BASE, size, value);
     } else if (addr >= N1G_SERIAL0_BASE && addr < N1G_SERIAL0_BASE + 0x40) {
@@ -257,6 +267,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_serial_write(s, 1, addr - N1G_SERIAL1_BASE, size, value);
     } else if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) {
         n1g_dev_opto_write(s, addr - N1G_OPTO_BASE, size, value);
+    } else if (addr >= N1G_DIMMER_BASE && addr <= N1G_DIMMER_BASE + 0xff) {
+        n1g_dev_dimmer_write(s, addr - N1G_DIMMER_BASE, size, value);
     } else if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) {
         n1g_disk_write(s, addr - N1G_EIDE_BASE, size, value);
     } else if (addr >= N1G_USB_BASE && addr <= N1G_USB_BASE + 0xfff) {

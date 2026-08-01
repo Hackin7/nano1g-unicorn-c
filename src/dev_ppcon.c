@@ -4,8 +4,12 @@ enum {
     PPCON_PP_VER1 = 0x00u,
     PPCON_PP_VER2 = 0x04u,
     PPCON_STRAP_A = 0x08u,
-    PPCON_STRAP_B = 0x0cu
+    PPCON_STRAP_B = 0x0cu,
+    PPCON_XMB_RAM_CFG = 0x3cu
 };
+
+#define XMB_RAM_SELF_REFRESH_REQUEST 0x00400000u
+#define XMB_RAM_SELF_REFRESH_STATUS  0x40000000u
 
 static uint32_t mask_for_size(uint32_t size) {
     if (size == 1u) {
@@ -71,4 +75,10 @@ void n1g_dev_ppcon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_
         old_value = default_value(aligned);
     }
     *reg = merge_write(old_value, offset, size, value);
+    if (aligned == PPCON_XMB_RAM_CFG) {
+        *reg &= ~XMB_RAM_SELF_REFRESH_STATUS;
+        if ((*reg & XMB_RAM_SELF_REFRESH_REQUEST) != 0u) {
+            *reg |= XMB_RAM_SELF_REFRESH_STATUS;
+        }
+    }
 }

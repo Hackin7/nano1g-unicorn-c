@@ -54,6 +54,9 @@ execution counters, audio/DMA counters, click-wheel controls, and live Battery,
 FireWire charger, USB power, and Hold controls. These controls update the PMU
 ADC and GPIO pins seen by guest firmware; Hold is active-low on GPIOA bit 5,
 raises PP502x GPIO IRQ 32, and suppresses optical-wheel packets while engaged.
+The displayed LCD also follows guest backlight hardware: Rockbox-style PWM and
+Apple’s Nano pulse dimmer/GPIOL power gate update the status feed, invalidate
+the browser frame, and scale the rendered native framebuffer.
 
 `--disk-out` is optional. With it, the emulator saves guest writes before a
 browser Restart and at clean exit, then reloads that mutable image when the
@@ -97,6 +100,9 @@ starts the emulator with Hold engaged.
 - Browser click-wheel scroll and server-side tap select.
 - Native Hold-switch GPIO/IRQ handling and firmware-rendered Apple lock icon.
 - Runtime battery and charger controls backed by the existing PMU/GPIO model.
+- Guest-controlled PWM/Nano backlight power and intensity, including Apple’s
+  native timeout-off and input-wake cycle through the XMB self-refresh
+  handshake.
 - Deterministic scripted input through `--input`.
 - Plugin browsing and native plugin loading from `.rockbox/rocks/`.
 - Calculator plugin launch, with `build-mingw/calculator.bmp` captured during

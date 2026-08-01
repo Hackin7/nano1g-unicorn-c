@@ -67,6 +67,16 @@ void n1g_dev_opto_tick(n1g_state_t *s);
 uint32_t n1g_dev_usb_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_usb_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 
+uint32_t n1g_dev_pwm_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_pwm_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+uint32_t n1g_dev_dimmer_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_dimmer_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+void n1g_dev_backlight_gpio_write(n1g_state_t *s, uint32_t gpio_offset, uint32_t write_mask);
+bool n1g_dev_backlight_powered(const n1g_state_t *s);
+uint32_t n1g_dev_backlight_level(const n1g_state_t *s);
+uint32_t n1g_dev_backlight_intensity(const n1g_state_t *s);
+const char *n1g_dev_backlight_mode(const n1g_state_t *s);
+
 uint32_t n1g_dev_lcd2_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_lcd2_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 bool n1g_dev_lcd2_write_ppm(n1g_state_t *s, const char *path);

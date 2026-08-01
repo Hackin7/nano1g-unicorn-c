@@ -177,6 +177,7 @@ void n1g_dev_gpio_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
                 s->gpio.regs[status_offset / 4u] &= ~(bits & mask);
             } else {
                 *reg = (*reg & ~mask) | (bits & mask);
+                n1g_dev_backlight_gpio_write(s, aligned, mask);
             }
             if (is_interrupt_enable_reg(aligned) || is_interrupt_level_reg(aligned) ||
                 is_interrupt_clear_reg(aligned)) {
@@ -199,6 +200,7 @@ void n1g_dev_gpio_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t
         s->gpio.regs[status_offset / 4u] &= ~(bits & mask);
     } else {
         s->gpio.regs[aligned / 4u] = (s->gpio.regs[aligned / 4u] & ~mask) | (bits & mask);
+        n1g_dev_backlight_gpio_write(s, aligned, mask);
     }
     if (is_interrupt_enable_reg(aligned) || is_interrupt_level_reg(aligned) ||
         is_interrupt_clear_reg(aligned)) {

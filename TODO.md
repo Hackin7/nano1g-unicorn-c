@@ -121,9 +121,12 @@ stereo output with stable playback controls and no unbounded buffering.
       low-battery behavior as coherent hardware state.
 - [ ] Model RTC date/time persistence and alarm behavior.
 - [ ] Model sleep, wake, power-off, and wake-source transitions.
+- [x] Model the XMB RAM self-refresh request/status handshake used by Apple’s
+      backlight timeout path, and verify a native button IRQ wakes the display.
 - [x] Verify hold-switch semantics, GPIO interrupt acknowledgement, native
       Apple lock-icon rendering, and button/wheel suppression.
-- [ ] Model PWM-controlled backlight state and brightness.
+- [x] Model PP502x PWM and Nano pulse-dimmer backlight state, GPIOL power,
+      browser intensity, status reporting, and frame invalidation.
 - [ ] Model clicker output or expose it as a host event.
 - [x] Add browser controls for live battery, main/USB charger, and Hold state
       without embedding firmware policy in the frontend.

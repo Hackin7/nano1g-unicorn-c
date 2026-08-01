@@ -787,6 +787,16 @@ run_image:
              (unsigned long long)s.i2s.underrun_halfwords,
              (unsigned long long)s.i2s.tx_overruns,
              (unsigned long long)s.i2s.host_dropped_halfwords);
+    n1g_info(&s,
+             "backlight mode=%s on=%u level=%u pwm=0x%08x pulses=%llu up=%llu down=%llu gpio_l=0x%08x",
+             n1g_dev_backlight_mode(&s),
+             n1g_dev_backlight_powered(&s) ? 1u : 0u,
+             n1g_dev_backlight_level(&s),
+             s.backlight.pwm_regs[0x10u / 4u],
+             (unsigned long long)s.backlight.dimmer_pulses,
+             (unsigned long long)s.backlight.dimmer_up_pulses,
+             (unsigned long long)s.backlight.dimmer_down_pulses,
+             s.gpio.regs[0x12cu / 4u]);
     if (s.opts.verbose) {
         for (uint32_t addr = 0; addr < 128u; addr++) {
             if (s.i2c.addr_reads[addr] != 0u || s.i2c.addr_writes[addr] != 0u) {

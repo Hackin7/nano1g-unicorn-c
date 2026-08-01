@@ -7,6 +7,34 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Native backlight and Apple timeout wake
+
+The previously unrouted PP502x PWM bank at `0x7000a000` and Nano pulse-dimmer
+bank at `0x7000c300` now have guest-visible register models. Rockbox-style PWM
+channel 1 uses its enable and duty fields; Apple’s Nano path tracks channel-8
+width-127/width-1 pulses, the 0-32 level, and GPIOL bit 7 as the physical power
+gate. Browser BMP/RGBA output scales native LCD pixels by that hardware state,
+and backlight transitions advance `frame_seq` even when LCD GRAM is unchanged.
+
+A live Apple stage0 run navigated Language -> Settings -> Backlight Timer,
+selected two seconds, and observed `mode=nano`, `on=false`. The first run then
+stalled at copied fast-RAM PC `0x40000534`; matching those bytes in the Apple
+IDB identified `sub_534C4C`, which requests XMB RAM self-refresh by setting bit
+22 at `0x7000003c` and waits for status bit 30. Modeling that request/status
+handshake lets the routine return. A subsequent native Menu tap was consumed
+with an empty optical queue and changed the backlight to `on=true` before the
+two-second timer expired again.
+
+`backlight_unit`, `ppcon_unit`, and `smoke_backlight` cover device behavior and
+native MMIO routing. `smoke_web_backlight` runs a guest ARM LCD/PWM probe through
+the real HTTP server and verifies lit, extinguished, and restored RGBA frames,
+status fields, and frame sequencing. The focused six-test gate passed in 2.98
+seconds. The post-change native acceptance pair also passed:
+`smoke_rockbox_menu` in 7.66 seconds and `smoke_apple_menu_navigation` in
+164.94 seconds. The final serial regression gate passed all 69 tests in 545.71
+seconds; its Apple menu and audio cases took 201.00 and 197.35 seconds,
+respectively.
+
 ## 2026-08-02: Native Hold switch and runtime power controls
 
 The physical Hold switch is now modeled as active-low GPIOA bit 5. Transitions

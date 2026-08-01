@@ -80,7 +80,7 @@ static const char index_html[] =
 "<button id=\"ipod-btn-play\" aria-label=\"Play/Pause\">&#9654;&#10073;&#10073;</button>"
 "<div id=\"ipod-btn-select\" role=\"button\" aria-label=\"Select\"></div>"
 "</div></div></div>"
-"<div id=\"debug\">state <span id=\"running\">...</span> &middot; lcd <span id=\"lcd\">0</span> &middot; disk <span id=\"disk\">0</span> &middot; pc <span id=\"pc\">0x00000000</span></div>"
+"<div id=\"debug\">state <span id=\"running\">...</span> &middot; lcd <span id=\"lcd\">0</span> &middot; light <span id=\"light\">default</span> &middot; disk <span id=\"disk\">0</span> &middot; pc <span id=\"pc\">0x00000000</span></div>"
 "</div><script>"
 "const fps_counter=document.getElementById('fps');"
 "const canvas=document.getElementById('ipod-screen');"
@@ -128,7 +128,7 @@ static const char index_html[] =
 "audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;reset_audio_queue();if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else{if(audio_timer)clearInterval(audio_timer);audio_timer=null;reset_audio_queue();if(audio_ctx)await audio_ctx.suspend();}};"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('light',(s.backlight_on?'on ':'off ')+s.backlight_level+'/32');text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;"
 "if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -242,6 +242,13 @@ static void rgb565(uint16_t p, uint8_t *r, uint8_t *g, uint8_t *b) {
     *b = (uint8_t)((raw & 0x1fu) * 255u / 31u);
 }
 
+static void apply_backlight(n1g_state_t *s, uint8_t *r, uint8_t *g, uint8_t *b) {
+    uint32_t intensity = n1g_dev_backlight_intensity(s);
+    *r = (uint8_t)((*r * intensity + 127u) / 255u);
+    *g = (uint8_t)((*g * intensity + 127u) / 255u);
+    *b = (uint8_t)((*b * intensity + 127u) / 255u);
+}
+
 static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len) {
     const uint32_t w = N1G_LCD_W;
     const uint32_t h = N1G_LCD_H;
@@ -269,6 +276,7 @@ static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len) {
         for (uint32_t x = 0; x < w; x++) {
             uint8_t r = 0, g = 0, b = 0;
             rgb565(s->lcd2.pixels[y * w + x], &r, &g, &b);
+            apply_backlight(s, &r, &g, &b);
             uint8_t *px = dst + y * row + x * 3u;
             px[0] = b;
             px[1] = g;
@@ -290,6 +298,7 @@ static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len) {
     for (uint32_t i = 0; i < pixels; i++) {
         uint8_t r = 0, g = 0, b = 0;
         rgb565(s->lcd2.pixels[i], &r, &g, &b);
+        apply_backlight(s, &r, &g, &b);
         rgba[i * 4u + 0u] = r;
         rgba[i * 4u + 1u] = g;
         rgba[i * 4u + 2u] = b;
@@ -336,6 +345,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"wm8975\":\"writes=%llu resets=%llu mode=%s output=%u muted=%u rate=%u control=0x%03x power=0x%03x out1=0x%03x/0x%03x\","
                      "\"input_events\":%llu,\"input_suppressed\":%llu,\"input\":\"%s\","
                      "\"battery_percent\":%u,\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,"
+                     "\"backlight_on\":%s,\"backlight_level\":%u,\"backlight_mode\":\"%s\","
+                     "\"backlight_pwm\":\"0x%08x\",\"backlight_pulses\":%llu,"
                      "\"opto_queue\":%u,\"opto_front\":\"0x%08x\","
                      "\"opto_buttons\":\"0x%08x\",\"opto_regs04\":\"0x%08x\","
                      "\"intc_cpu\":\"0x%08x/0x%08x\",\"intc_hi_cpu\":\"0x%08x/0x%08x\","
@@ -403,6 +414,11 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      s->opts.main_charger_connected ? "true" : "false",
                      s->opts.usb_charger_connected ? "true" : "false",
                      s->opts.hold_switch_engaged ? "true" : "false",
+                     n1g_dev_backlight_powered(s) ? "true" : "false",
+                     n1g_dev_backlight_level(s),
+                     n1g_dev_backlight_mode(s),
+                     s->backlight.pwm_regs[0x10u / 4u],
+                     (unsigned long long)s->backlight.dimmer_pulses,
                      (unsigned)s->opto.queue_len,
                      opto_front,
                      s->opto.button_bits,
@@ -849,6 +865,7 @@ bool n1g_web_start(n1g_state_t *s, n1g_web_server_t *web, uint16_t port) {
     web->listen_fd = N1G_WEB_INVALID_FD;
     web->port = port;
     web->last_lcd_words = UINT64_MAX;
+    web->last_backlight_generation = UINT64_MAX;
 
 #ifdef _WIN32
     if (!winsock_started) {
@@ -893,8 +910,10 @@ void n1g_web_poll(n1g_state_t *s, n1g_web_server_t *web, bool running) {
     if (!web || !web->active) {
         return;
     }
-    if (s->counters.lcd_words != web->last_lcd_words) {
+    if (s->counters.lcd_words != web->last_lcd_words ||
+        s->backlight.generation != web->last_backlight_generation) {
         web->last_lcd_words = s->counters.lcd_words;
+        web->last_backlight_generation = s->backlight.generation;
         web->frame_seq++;
     }
 
@@ -921,6 +940,7 @@ bool n1g_web_take_restart(n1g_web_server_t *web, char *preset, size_t preset_siz
     web->restart_requested = false;
     web->restart_preset[0] = '\0';
     web->last_lcd_words = UINT64_MAX;
+    web->last_backlight_generation = UINT64_MAX;
     web->frame_seq++;
     return true;
 }

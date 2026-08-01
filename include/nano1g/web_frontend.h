@@ -12,6 +12,7 @@ typedef struct n1g_web_server {
     uint16_t port;
     uint64_t frame_seq;
     uint64_t last_lcd_words;
+    uint64_t last_backlight_generation;
     char restart_preset[32];
     bool restart_requested;
     bool active;

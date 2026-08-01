@@ -58,6 +58,7 @@ set(NANO1G_SOURCES
   src/dev_serial.c
   src/dev_opto.c
   src/dev_usb.c
+  src/dev_backlight.c
   src/dev_lcd2.c
   src/dev_ppcon.c
   src/dev_flash.c
@@ -214,6 +215,7 @@ if(BUILD_TESTING)
 
   add_executable(gpio_power_unit
     tests/test_gpio_power.c
+    src/dev_backlight.c
     src/dev_gpio.c
     src/dev_opto.c
     src/trace.c
@@ -227,6 +229,37 @@ if(BUILD_TESTING)
     endif()
   endif()
   add_test(NAME gpio_power_unit COMMAND gpio_power_unit)
+
+  add_executable(backlight_unit
+    tests/test_backlight.c
+    src/dev_backlight.c
+    src/dev_gpio.c
+    src/dev_opto.c
+    src/trace.c
+  )
+  target_include_directories(backlight_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(backlight_unit PRIVATE /W4)
+    else()
+      target_compile_options(backlight_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME backlight_unit COMMAND backlight_unit)
+
+  add_executable(ppcon_unit
+    tests/test_ppcon.c
+    src/dev_ppcon.c
+  )
+  target_include_directories(ppcon_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(ppcon_unit PRIVATE /W4)
+    else()
+      target_compile_options(ppcon_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME ppcon_unit COMMAND ppcon_unit)
 
   add_executable(serial_unit
     tests/test_serial.c
@@ -458,6 +491,12 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_gpio_idle_inputs.cmake)
+    add_test(NAME smoke_backlight
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_backlight.cmake)
     add_test(NAME smoke_ata_identify_read
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>
@@ -540,6 +579,14 @@ if(BUILD_TESTING)
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_web_hardware_controls.cmake)
     set_tests_properties(smoke_web_hardware_controls PROPERTIES TIMEOUT 40)
+    add_test(NAME smoke_web_backlight
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_web_backlight.cmake)
+    set_tests_properties(smoke_web_backlight PROPERTIES TIMEOUT 40)
     add_test(NAME smoke_dma_lcd
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>

@@ -189,6 +189,10 @@ Useful options:
   The Battery slider and FireWire, USB power, and Hold checkboxes update live
   guest-visible hardware through `/hardware`; those external states survive a
   browser preset restart.
+  Guest writes to the PP502x PWM channel and Nano dimmer/GPIOL power path drive
+  the displayed backlight level. Backlight changes advance `frame_seq`, and
+  `/frame.rgba` plus `/frame.bmp` apply the current intensity to the native LCD
+  pixels without changing the guest framebuffer.
   `/audio.pcm?cursor=N` exposes a bounded, cursor-based stereo signed-16-bit PCM
   stream. The status feed reports codec output state, sample rate, nonzero and
   silenced sample counts, peak level, underruns, host drops, and the existing
@@ -242,6 +246,12 @@ Implemented foundation:
   `20D ` values, so Apple direct boot chooses the 128 KiB fast-RAM handoff slot
   at `0x4001ff18`.
 - GPIO register latching plus PP502x `+0x800` atomic bitwise mirror writes.
+- PP502x PWM channel 1 and the Nano channel-8 pulse dimmer, including Apple’s
+  GPIOL bit-7 backlight power gate. The browser status feed and rendered frame
+  reflect guest-selected power and brightness.
+- XMB RAM self-refresh request/status behavior at `0x7000003c`, allowing
+  Apple’s low-power transition routine to complete instead of spinning in its
+  copied fast-RAM wait loop.
 - Boot reset loader that loads the requested firmware image into guest memory
   and initializes CPU handoff registers.
 - Cache-control and memory-controller MMIO ranges are decoded through the
@@ -428,12 +438,10 @@ No-HLE rule:
 
 See `NO_HLE.md` for the project contract.
 
-Still expected before real Apple Language-screen parity:
+Still expected before full official-firmware parity:
 
 - native boot ROM/bootloader path, or modeled hardware media path, that produces
   Apple boot metadata/sysinfo through guest execution;
-- native Apple framebuffer rendering for the Language screen;
-- Apple LCD/DMA path validation against the native Apple framebuffer;
 - exact interrupt/timer semantics under larger `--slice-insns` values, beyond
   the currently modeled free-running RTC scale knob;
 - native Apple boot ROM or flash dump. The current local artifact set still
