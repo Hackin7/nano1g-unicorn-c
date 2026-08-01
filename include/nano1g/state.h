@@ -199,10 +199,20 @@ typedef struct n1g_gpio {
 
 typedef struct n1g_i2c {
     uint32_t regs[0x100 / 4];
+    uint64_t addr_reads[128];
+    uint64_t addr_writes[128];
+    uint64_t transactions;
+    uint16_t wm8975_regs[0x2b];
+    uint64_t wm8975_written;
+    uint64_t wm8975_resets;
     uint8_t data[4];
     uint8_t control;
     uint8_t addr_op;
     uint8_t busy_reads;
+    uint8_t last_addr;
+    uint8_t last_count;
+    bool last_read;
+    uint32_t last_data;
     uint8_t pcf_reg;
     uint8_t pcf_regs[0x40];
     uint64_t pcf_written;

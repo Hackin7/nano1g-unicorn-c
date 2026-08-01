@@ -308,6 +308,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"dma_lcd_transfers\":%llu,\"disk_reads\":%llu,"
                      "\"irq_count\":%llu,\"i2s_tx\":%llu,\"i2s_drained\":%llu,"
                      "\"dma_audio_starts\":%llu,\"dma_audio_done\":%llu,\"dma_audio_bytes\":%llu,"
+                     "\"i2c_txns\":%llu,\"i2c_last\":\"addr=0x%02x op=%s count=%u data=0x%08x\","
+                     "\"wm8975\":\"writes=%llu resets=%llu muted=%u rate=0x%03x pwr=0x%03x/0x%03x out1=0x%03x/0x%03x\","
                      "\"input_events\":%llu,\"input\":\"%s\","
                      "\"opto_queue\":%u,\"opto_front\":\"0x%08x\","
                      "\"opto_buttons\":\"0x%08x\",\"opto_regs04\":\"0x%08x\","
@@ -341,6 +343,19 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)(s->dma.ch[0].starts + s->dma.ch[1].starts + s->dma.ch[2].starts + s->dma.ch[3].starts),
                      (unsigned long long)(s->dma.ch[0].completions + s->dma.ch[1].completions + s->dma.ch[2].completions + s->dma.ch[3].completions),
                      (unsigned long long)(s->dma.ch[0].bytes_pushed + s->dma.ch[1].bytes_pushed + s->dma.ch[2].bytes_pushed + s->dma.ch[3].bytes_pushed),
+                     (unsigned long long)s->i2c.transactions,
+                     s->i2c.last_addr,
+                     s->i2c.last_read ? "read" : "write",
+                     s->i2c.last_count,
+                     s->i2c.last_data,
+                     (unsigned long long)s->i2c.addr_writes[0x1au],
+                     (unsigned long long)s->i2c.wm8975_resets,
+                     (s->i2c.wm8975_regs[0x05u] & (1u << 3u)) != 0u ? 1u : 0u,
+                     (unsigned)s->i2c.wm8975_regs[0x08u],
+                     (unsigned)s->i2c.wm8975_regs[0x19u],
+                     (unsigned)s->i2c.wm8975_regs[0x1au],
+                     (unsigned)s->i2c.wm8975_regs[0x02u],
+                     (unsigned)s->i2c.wm8975_regs[0x03u],
                      (unsigned long long)s->opto.input_events,
                      s->opto.last_input[0] ? s->opto.last_input : "none",
                      (unsigned)s->opto.queue_len,

@@ -1,6 +1,12 @@
 #include "nano1g/devices.h"
 
+#include "nano1g/trace.h"
+
 #include <string.h>
+
+#define WM8975_I2C_ADDR 0x1au
+#define WM8975_REG_COUNT 0x2bu
+#define WM8975_RESET_REG 0x0fu
 
 static uint32_t data32(const n1g_state_t *s) {
     return (uint32_t)s->i2c.data[0] |
@@ -172,6 +178,26 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
     s->i2c.pcf_reg++;
 }
 
+static void wm8975_write(n1g_state_t *s, uint8_t count) {
+    if (count < 2u) {
+        return;
+    }
+    uint8_t first = s->i2c.data[0];
+    uint8_t reg = first >> 1u;
+    uint16_t value = (uint16_t)(((uint16_t)(first & 1u) << 8u) | s->i2c.data[1]);
+    if (reg >= WM8975_REG_COUNT) {
+        return;
+    }
+    if (reg == WM8975_RESET_REG) {
+        memset(s->i2c.wm8975_regs, 0, sizeof(s->i2c.wm8975_regs));
+        s->i2c.wm8975_written = 0;
+        s->i2c.wm8975_resets++;
+        return;
+    }
+    s->i2c.wm8975_regs[reg] = value;
+    s->i2c.wm8975_written |= 1ull << reg;
+}
+
 static void start_txn(n1g_state_t *s) {
     uint8_t addr = (uint8_t)((s->i2c.addr_op >> 1u) & 0x7fu);
     bool read = (s->i2c.addr_op & 1u) != 0u;
@@ -191,8 +217,31 @@ static void start_txn(n1g_state_t *s) {
                 pcf_write(s, s->i2c.data[i], i == 0u);
             }
         }
+    } else if (addr == WM8975_I2C_ADDR && !read) {
+        wm8975_write(s, count);
     } else if (read) {
         memset(s->i2c.data, 0, sizeof(s->i2c.data));
+    }
+
+    s->i2c.transactions++;
+    if (read) {
+        s->i2c.addr_reads[addr]++;
+    } else {
+        s->i2c.addr_writes[addr]++;
+    }
+    s->i2c.last_addr = addr;
+    s->i2c.last_count = count;
+    s->i2c.last_read = read;
+    s->i2c.last_data = data32(s);
+    uint64_t addr_transactions = s->i2c.addr_reads[addr] + s->i2c.addr_writes[addr];
+    if (s->opts.verbose && addr_transactions <= 32u) {
+        n1g_log(s,
+                "i2c txn addr=0x%02x op=%s count=%u data=0x%08x addr_txns=%llu",
+                addr,
+                read ? "read" : "write",
+                count,
+                s->i2c.last_data,
+                (unsigned long long)addr_transactions);
     }
 
     s->i2c.busy_reads = 1;

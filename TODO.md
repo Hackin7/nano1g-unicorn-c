@@ -11,6 +11,8 @@ environment into a complete, hardware-faithful iPod Nano 1G emulator.
 - The Language, main-menu, and Extras/Clock transitions render without LCD
   block overruns.
 - Rockbox boots, browses FAT media, loads tested plugins, and drives LCD2.
+- Apple browses the seeded iTunesDB, opens Now Playing, programs the WM8975,
+  and feeds decoded PCM through DMA to I2S.
 - ATA reads/writes, interrupt delivery, timers, flash commands, basic PMU/I2C,
   serial ports, and RAM-to-I2S DMA have focused tests.
 - The current Apple path is stage0-assisted. It is not a stock cold boot.
@@ -70,7 +72,7 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
       clearly selected `--disk-out` image.
 - [ ] Ensure source fixtures remain read-only by default.
 - [ ] Verify settings and preferences survive an emulator restart.
-- [ ] Verify the Apple firmware reads the seeded iTunesDB and media files.
+- [x] Verify the Apple firmware reads the seeded iTunesDB and media files.
 - [ ] Verify playlists, tracks, metadata, seeking, and play counts.
 - [ ] Verify database and preference updates survive a disk snapshot reload.
 - [ ] Add corruption and out-of-range LBA tests.
@@ -80,7 +82,7 @@ all intended disk changes persist across clean emulator restarts.
 
 ## P1: Audible Audio Playback
 
-- [ ] Trace Apple codec setup over I2C and identify the codec register model.
+- [x] Trace Apple codec setup over I2C and identify the codec register model.
 - [ ] Implement the required codec power, routing, mute, gain, and sample-rate
       registers.
 - [ ] Complete I2S format, clock, FIFO, and DMA pacing semantics used by Apple.

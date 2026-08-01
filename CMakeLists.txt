@@ -239,6 +239,21 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME timer_scaled_unit COMMAND timer_scaled_unit)
 
+  add_executable(i2c_codec_unit
+    tests/test_i2c_codec.c
+    src/dev_i2c.c
+    src/trace.c
+  )
+  target_include_directories(i2c_codec_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(i2c_codec_unit PRIVATE /W4)
+    else()
+      target_compile_options(i2c_codec_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME i2c_codec_unit COMMAND i2c_codec_unit)
+
   add_test(NAME smoke_args COMMAND $<TARGET_FILE:nano1g> --help)
 
   find_package(Python3 COMPONENTS Interpreter QUIET)
@@ -362,6 +377,14 @@ if(BUILD_TESTING)
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_menu_navigation.cmake)
     set_tests_properties(smoke_apple_menu_navigation PROPERTIES TIMEOUT 240)
+    add_test(NAME smoke_apple_audio
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_audio.cmake)
+    set_tests_properties(smoke_apple_audio PROPERTIES TIMEOUT 300)
     add_test(NAME smoke_aupd_batch_audit
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}

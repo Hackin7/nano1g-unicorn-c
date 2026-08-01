@@ -575,6 +575,30 @@ run_image:
              (unsigned long long)(s.dma.ch[0].starts + s.dma.ch[1].starts + s.dma.ch[2].starts + s.dma.ch[3].starts),
              (unsigned long long)(s.dma.ch[0].completions + s.dma.ch[1].completions + s.dma.ch[2].completions + s.dma.ch[3].completions),
              (unsigned long long)(s.dma.ch[0].bytes_pushed + s.dma.ch[1].bytes_pushed + s.dma.ch[2].bytes_pushed + s.dma.ch[3].bytes_pushed));
+    if (s.opts.verbose) {
+        for (uint32_t addr = 0; addr < 128u; addr++) {
+            if (s.i2c.addr_reads[addr] != 0u || s.i2c.addr_writes[addr] != 0u) {
+                n1g_info(&s,
+                         "i2c_summary addr=0x%02x reads=%llu writes=%llu",
+                         addr,
+                         (unsigned long long)s.i2c.addr_reads[addr],
+                         (unsigned long long)s.i2c.addr_writes[addr]);
+            }
+        }
+        if (s.i2c.addr_writes[0x1au] != 0u) {
+            n1g_info(&s,
+                     "wm8975_state writes=%llu resets=%llu muted=%u interface=0x%03x rate=0x%03x pwr1=0x%03x pwr2=0x%03x out1=0x%03x/0x%03x",
+                     (unsigned long long)s.i2c.addr_writes[0x1au],
+                     (unsigned long long)s.i2c.wm8975_resets,
+                     (s.i2c.wm8975_regs[0x05u] & (1u << 3u)) != 0u ? 1u : 0u,
+                     (unsigned)s.i2c.wm8975_regs[0x07u],
+                     (unsigned)s.i2c.wm8975_regs[0x08u],
+                     (unsigned)s.i2c.wm8975_regs[0x19u],
+                     (unsigned)s.i2c.wm8975_regs[0x1au],
+                     (unsigned)s.i2c.wm8975_regs[0x02u],
+                     (unsigned)s.i2c.wm8975_regs[0x03u]);
+        }
+    }
     n1g_info(&s,
              "cores cpu_pc=0x%08x cop_pc=0x%08x cpu_halted=%u cop_halted=%u cpu_ctl=0x%08x cop_ctl=0x%08x cpu_insns=%llu cop_insns=%llu",
              n1g_cpu_pc(&s, N1G_CORE_CPU),
