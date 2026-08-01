@@ -91,9 +91,12 @@ if missing (see that script for `PLUGIN`/`MUSIC_DIR` inputs).
 
 Useful options:
 
-- `--run rockbox|apple-stage0|apple-direct|apple-official`: start from a named
+- `--run rockbox|ipodlinux|apple-stage0|apple-direct|apple-official`: start from a named
   preset. `apple-official` is the real cold-boot route. `apple-flash` remains
   accepted as a compatibility alias for the same path.
+- The `ipodlinux` preset directly loads the local ZeroSlackr kernel and
+  userland fixtures from `../artifacts/ipodlinux/`. It is an early bring-up
+  target: the kernel reaches platform startup but does not render a UI yet.
 - `--boot-mode direct|flash`: direct loads `--firmware` into guest RAM; flash
   maps `--flash-rom` at reset vector `0x00000000` and does not preload `osos`.
 - `--firmware-from-disk`: in direct mode, find a wrapped firmware image in the

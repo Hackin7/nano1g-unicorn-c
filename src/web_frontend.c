@@ -62,7 +62,7 @@ static const char index_html[] =
 "</style></head><body><div id=\"container\">"
 "<h1>iPod Nano 1G</h1>"
 "<div id=\"status\">Loading...</div>"
-"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
+"<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option><option value=\"ipodlinux\">iPod Linux (experimental)</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button></div>"
 "<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>audio</b> <span id=\"audio\">0/0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
 "<div id=\"ipod-container\" tabindex=\"0\">"
 "<div id=\"ipod-body\">"
@@ -296,6 +296,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
         preset = "apple-official";
     } else if (strcmp(label, "Rockbox") == 0) {
         preset = "rockbox";
+    } else if (strcmp(label, "iPod Linux (experimental)") == 0) {
+        preset = "ipodlinux";
     }
 
     uint32_t opto_front = s->opto.queue_len ? s->opto.queue[s->opto.queue_head] : 0u;
@@ -580,6 +582,7 @@ static bool send_input(n1g_state_t *s, intptr_t fd, const char *query) {
 
 static bool valid_restart_preset(const char *preset) {
     return strcmp(preset, "rockbox") == 0 ||
+           strcmp(preset, "ipodlinux") == 0 ||
            strcmp(preset, "apple-direct") == 0 ||
            strcmp(preset, "apple-official") == 0 ||
            strcmp(preset, "apple-flash") == 0 ||
@@ -589,6 +592,7 @@ static bool valid_restart_preset(const char *preset) {
 
 static const char *restart_preset_from_query(const char *query) {
     if (query_has(query, "restart=rockbox")) return "rockbox";
+    if (query_has(query, "restart=ipodlinux")) return "ipodlinux";
     if (query_has(query, "restart=apple-direct")) return "apple-direct";
     if (query_has(query, "restart=apple-official")) return "apple-official";
     if (query_has(query, "restart=apple-flash")) return "apple-flash";

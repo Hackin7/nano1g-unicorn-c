@@ -24,12 +24,15 @@ static void handle_stop_signal(int sig) {
 static const char apple_stage0_label[] = "Apple stage0 canary";
 static const char apple_direct_label[] = "Apple OS direct diagnostic";
 static const char apple_flash_label[] = "Apple official boot";
+static const char ipodlinux_label[] = "iPod Linux (experimental)";
 static const char rockbox_label[] = "Rockbox";
 
 static const char apple_stage0_fw[] = "tmp/stage0-sysinfo-osos-probe.bin";
 static const char apple_direct_fw[] = "../artifacts/firmware/apple_nano_14.5.3.1_fw.bin";
 static const char apple_default_flash_rom[] = "../artifacts/firmware/apple_nano_1g_bootrom.bin";
 static const char apple_disk[] = "../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img";
+static const char ipodlinux_fw[] = "../artifacts/ipodlinux/kernel.bin";
+static const char ipodlinux_disk[] = "../artifacts/ipodlinux/userland.img";
 static const char rockbox_fw[] = "../artifacts/firmware/rockbox.ipod";
 static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-content-gpt.img";
 
@@ -41,7 +44,7 @@ static const char *apple_flash_rom_path(void) {
 static void apply_run_preset(n1g_opts_t *opts, const char *preset);
 
 static void usage(void) {
-    puts("nano1g [--run rockbox|apple-stage0|apple-direct|apple-official|apple-flash]");
+    puts("nano1g [--run rockbox|ipodlinux|apple-stage0|apple-direct|apple-official|apple-flash]");
     puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--disk-out PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
     puts("       [--load-addr ADDR] [--entry ADDR]");
@@ -283,6 +286,17 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
         opts->timer_divider = 1;
         opts->rtc_usec_per_tick = 8;
         opts->virtual_memmap = true;
+    } else if (strcmp(preset, "ipodlinux") == 0) {
+        opts->run_label = ipodlinux_label;
+        opts->profile = N1G_PROFILE_ROCKBOX;
+        opts->firmware_path = ipodlinux_fw;
+        opts->disk_path = ipodlinux_disk;
+        opts->max_insns = 20000000u;
+        opts->slice_insns = 512;
+        opts->timer_divider = 1;
+        opts->load_addr = N1G_SDRAM_BASE;
+        opts->entry = N1G_SDRAM_BASE;
+        opts->entry_set = true;
     } else {
         opts->run_label = rockbox_label;
         opts->profile = N1G_PROFILE_ROCKBOX;

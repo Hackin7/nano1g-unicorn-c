@@ -11,6 +11,8 @@ environment into a complete, hardware-faithful iPod Nano 1G emulator.
 - The Language, main-menu, and Extras/Clock transitions render without LCD
   block overruns.
 - Rockbox boots, browses FAT media, loads tested plugins, and drives LCD2.
+- The experimental iPod Linux preset reaches early kernel platform startup;
+  PP502x handoff and loader2 boot remain incomplete.
 - Apple browses the seeded iTunesDB, opens Now Playing, programs the WM8975,
   and feeds decoded PCM through DMA to I2S.
 - ATA reads/writes, interrupt delivery, timers, flash commands, basic PMU/I2C,
@@ -176,8 +178,8 @@ reasonable range of host speeds and instruction-slice settings.
 - [ ] Test bundled games and identify any new hardware assumptions.
 - [ ] Test settings changes followed by restart and disk reload.
 - [ ] Expand Rockbox plugin coverage beyond the currently verified plugins.
-- [ ] Revisit the iPodLinux stage0/loader2 bring-up plan after the Apple and
-      Rockbox hardware paths are stable.
+- [ ] Replace the direct iPod Linux kernel preset with the planned native
+      stage0 -> loader2 -> kernel chain and reach the loader2 menu.
 
 Completion signal: major user-visible features have deterministic navigation
 tests, expected framebuffer checks, and no newly unrouted critical MMIO.
