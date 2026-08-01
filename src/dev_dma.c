@@ -201,10 +201,20 @@ static void dma_try_lcd_transfer(n1g_state_t *s, uint32_t channel) {
      * the peripheral request when BLOCK_CTRL enters its start state. */
     if (apple_request) {
         if (!s->dma.lcd_request_armed[channel] ||
-            s->lcd2.block_pixels_remaining == 0u ||
-            s->lcd2.block_pixels_remaining != byte_count / 2u) {
+            s->lcd2.block_pixels_remaining == 0u) {
             return;
         }
+        uint32_t descriptor_pixels = byte_count / 2u;
+        if (s->lcd2.block_pixels_remaining != descriptor_pixels) {
+            if (s->dma.lcd_mismatch_block_start[channel] != s->lcd2.block_starts) {
+                s->dma.lcd_mismatch_block_start[channel] = s->lcd2.block_starts;
+                s->dma.lcd_geometry_mismatches++;
+            }
+            return;
+        }
+        s->dma.lcd_geometry_accepts++;
+        s->dma.lcd_descriptor_pixels += descriptor_pixels;
+        s->dma.lcd_block_pixels += s->lcd2.block_pixels_remaining;
         s->dma.lcd_request_armed[channel] = false;
     }
 

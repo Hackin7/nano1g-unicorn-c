@@ -1,5 +1,6 @@
 #include "nano1g/input_script.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,6 +33,11 @@ bool n1g_input_script_load(n1g_input_script_t *script, const char *text) {
         } else if (strncmp(tok, "wheel:", 6) == 0) {
             e.kind = N1G_INPUT_EV_WHEEL;
             e.delta = (int32_t)strtol(tok + 6, NULL, 10);
+            if (!push_event(script, e)) return false;
+        } else if (strncmp(tok, "frame:", 6) == 0) {
+            if (tok[6] == '\0' || strlen(tok + 6) >= sizeof(e.name)) return false;
+            e.kind = N1G_INPUT_EV_FRAME;
+            strncpy(e.name, tok + 6, sizeof(e.name) - 1u);
             if (!push_event(script, e)) return false;
         } else if (len > 5 && strcmp(tok + len - 5, "-down") == 0) {
             e.kind = N1G_INPUT_EV_DOWN;
@@ -86,7 +92,36 @@ void n1g_input_script_tick(n1g_state_t *s) {
             continue;
         }
 
-        if (e->kind == N1G_INPUT_EV_WHEEL) {
+        if (e->kind == N1G_INPUT_EV_FRAME) {
+            char path[1024] = {0};
+            const char *prefix = s->opts.ppm_path;
+            size_t prefix_len = prefix ? strlen(prefix) : 0u;
+            int n = -1;
+            if (prefix && prefix_len >= 4u &&
+                strcmp(prefix + prefix_len - 4u, ".ppm") == 0) {
+                n = snprintf(path,
+                             sizeof(path),
+                             "%.*s-%s.ppm",
+                             (int)(prefix_len - 4u),
+                             prefix,
+                             e->name);
+            } else if (prefix) {
+                n = snprintf(path,
+                             sizeof(path),
+                             "%s-%s.ppm",
+                             prefix,
+                             e->name);
+            }
+            bool ok = n > 0 && (size_t)n < sizeof(path) &&
+                      n1g_dev_lcd2_write_ppm(s, path);
+            n1g_info(s,
+                     "input capture frame=%s path=%s ok=%u lcd_words=%llu lcd_blocks=%llu",
+                     e->name,
+                     path[0] ? path : "(missing --ppm)",
+                     ok ? 1u : 0u,
+                     (unsigned long long)s->counters.lcd_words,
+                     (unsigned long long)s->lcd2.block_starts);
+        } else if (e->kind == N1G_INPUT_EV_WHEEL) {
             n1g_dev_opto_wheel(s, e->delta);
             n1g_info(s, "input inject wheel delta=%d", e->delta);
         } else {

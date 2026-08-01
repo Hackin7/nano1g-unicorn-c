@@ -9,6 +9,7 @@
  *   NAME-up       release button
  *   NAME          press, hold N1G_INPUT_HOLD_TICKS, release
  *   wheel:+D      wheel movement of D steps (D may be negative)
+ *   frame:LABEL   capture the native LCD beside the required --ppm path
  */
 #define N1G_INPUT_HOLD_TICKS 2000u
 

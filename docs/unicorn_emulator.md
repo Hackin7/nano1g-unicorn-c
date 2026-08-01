@@ -88,13 +88,16 @@ Raw control endpoints are still available for scripts and debugging:
 
 Headless deterministic input is available through `--input SCRIPT`, where the
 script accepts comma-separated `wait:N`, `NAME-down`, `NAME-up`, bare `NAME`,
-`hold-down`, `hold-up`, and `wheel:+D` / `wheel:-D` tokens. `--hold-switch`
-starts the emulator with Hold engaged.
+`hold-down`, `hold-up`, `wheel:+D` / `wheel:-D`, and `frame:LABEL` tokens.
+Frame checkpoints are written beside `--ppm` after the script's calibrated
+settle waits. `--hold-switch` starts the emulator with Hold engaged.
 
 ## Verified Rockbox Capability
 
 - Rockbox `.ipod` payload loading and boot to the main menu.
 - LCD framebuffer rendering through the native LCD2 path.
+- Apple LCD DMA descriptor/block geometry accounting and hash-checked settled
+  Language, main-menu, and Extras checkpoints.
 - FAT disk reads from a GPT-wrapped Rockbox content image.
 - Browser framebuffer polling and status counters.
 - Browser click-wheel scroll and server-side tap select.

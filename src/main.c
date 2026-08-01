@@ -754,7 +754,7 @@ run_image:
         n1g_info(&s, "%s", line);
     }
     n1g_info(&s,
-             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu lcd_gram=%llu lcd_block=%llu lcd_overruns=%llu dma_lcd_transfers=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
+             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu lcd_words=%llu lcd_gram=%llu lcd_block=%llu lcd_overruns=%llu dma_lcd_transfers=%llu lcd_dma_accepts=%llu lcd_dma_mismatches=%llu lcd_dma_descriptor_pixels=%llu lcd_dma_block_pixels=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
              (unsigned long long)s.counters.guest_insns,
              (unsigned long long)s.counters.device_ticks,
              (unsigned long long)s.counters.mmio_reads,
@@ -765,6 +765,10 @@ run_image:
              (unsigned long long)s.lcd2.block_overrun_words,
              (unsigned long long)(s.dma.lcd_transfers[0] + s.dma.lcd_transfers[1] +
                                   s.dma.lcd_transfers[2] + s.dma.lcd_transfers[3]),
+             (unsigned long long)s.dma.lcd_geometry_accepts,
+             (unsigned long long)s.dma.lcd_geometry_mismatches,
+             (unsigned long long)s.dma.lcd_descriptor_pixels,
+             (unsigned long long)s.dma.lcd_block_pixels,
              (unsigned long long)s.counters.disk_reads,
              (unsigned long long)s.counters.disk_writes,
              (unsigned long long)s.counters.irq_count,

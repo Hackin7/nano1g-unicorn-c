@@ -7,6 +7,33 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Apple settled-frame and LCD geometry acceptance
+
+Apple LCD DMA now records each transaction whose descriptor pixel count
+matches the active LCD block, deduplicates mismatched-block observations while
+the controller polls, and totals both accepted geometries independently. The
+native menu acceptance requires accepted count to equal completed LCD DMA
+transfers and descriptor-pixel total to equal block-pixel total.
+
+The deterministic input grammar also supports `frame:LABEL` checkpoints beside
+the final `--ppm` output. One native stage0-assisted run now captures and
+hash-validates three post-settle transitions:
+
+```text
+Language / English  bd02abedf9c24631c0f7e1480daad90a7a1be9af26a413180e3ef05c65e5486f
+iPod / Music        08c29ee060872bac70d746b73b8796deb040c5e7657a04d98d4b9c7b234fb978
+Extras / Clock      a202fcdf0940746ebef42d02a9060b52028c59c22f5c2e3ed25960ec8aa77947
+```
+
+All three are 176x132 native frames with more than 20,000 nonblack pixels and
+at least 64 colors. Visual inspection confirmed the intended settled screen at
+each checkpoint. The strengthened `smoke_apple_menu_navigation` passed in
+194.06 seconds before the hashes were frozen, then passed the hash-enforced
+reproducibility run in 211.90 seconds. The final serial gate passed all 70
+tests in 579.91 seconds; `smoke_apple_menu_navigation` took 191.46 seconds,
+`smoke_apple_audio` took 224.17 seconds, and `smoke_rockbox_menu` took 8.19
+seconds in that run.
+
 ## 2026-08-02: Native backlight and Apple timeout wake
 
 The previously unrouted PP502x PWM bank at `0x7000a000` and Nano pulse-dimmer

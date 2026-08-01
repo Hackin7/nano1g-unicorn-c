@@ -157,6 +157,10 @@ Useful options:
   - `NAME` (bare): press, hold `2000` ticks, release.
   - `wheel:+D` / `wheel:-D`: move the click wheel by `D` raw units (the web
     frontend's `wheel=down`/`wheel=up` buttons send `+4`/`-4`).
+  - `frame:LABEL`: write a deterministic LCD checkpoint beside `--ppm`; for
+    example, `--ppm tmp/run.ppm` and `frame:main` produce
+    `tmp/run-main.ppm`. This serializes native framebuffer state without
+    changing guest execution.
 
   Timing is finicky and was calibrated empirically against the Rockbox
   build in `../artifacts/firmware/rockbox.ipod` (see `BENCHMARKS.md`,
@@ -265,6 +269,10 @@ Implemented foundation:
   `--rtc-usec-per-tick` scale so native bootloader delay loops do not become
   artificially slow when Unicorn runs larger instruction slices. The default is
   still `1` for compatibility; `smoke_timer_rtc_scale` covers the scaled path.
+- Apple LCD DMA records accepted and mismatched descriptor geometry. Native
+  acceptance asserts every completed transfer had equal descriptor and active
+  block pixel counts; calibrated input checkpoints preserve hash-checked
+  Language, main-menu, and Extras settled frames from one execution.
 - Headless LCD PPM output.
 - Local browser frontend via `--web PORT`, backed by the same native LCD
   framebuffer that PPM output uses, with live Rockbox input controls and audio

@@ -178,6 +178,11 @@ typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
     bool lcd_request_armed[4];
     uint64_t lcd_transfers[4];
+    uint64_t lcd_geometry_accepts;
+    uint64_t lcd_geometry_mismatches;
+    uint64_t lcd_descriptor_pixels;
+    uint64_t lcd_block_pixels;
+    uint64_t lcd_mismatch_block_start[4];
     /* Rockbox-style peripheral-paced channel engine (RAM -> IIS FIFO). */
     struct {
         uint32_t cur_addr;
@@ -336,8 +341,14 @@ typedef struct n1g_ppcon {
 #define N1G_INPUT_MAX_EVENTS 256u
 
 typedef struct n1g_input_event {
-    enum { N1G_INPUT_EV_WAIT, N1G_INPUT_EV_DOWN, N1G_INPUT_EV_UP, N1G_INPUT_EV_WHEEL } kind;
-    char name[8];
+    enum {
+        N1G_INPUT_EV_WAIT,
+        N1G_INPUT_EV_DOWN,
+        N1G_INPUT_EV_UP,
+        N1G_INPUT_EV_WHEEL,
+        N1G_INPUT_EV_FRAME
+    } kind;
+    char name[16];
     int32_t delta;
     uint64_t ticks;
 } n1g_input_event_t;

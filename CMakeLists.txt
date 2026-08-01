@@ -261,6 +261,25 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME ppcon_unit COMMAND ppcon_unit)
 
+  add_executable(input_script_unit
+    tests/test_input_script.c
+    src/input_script.c
+    src/dev_opto.c
+    src/dev_gpio.c
+    src/dev_backlight.c
+    src/dev_lcd2.c
+    src/trace.c
+  )
+  target_include_directories(input_script_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(input_script_unit PRIVATE /W4)
+    else()
+      target_compile_options(input_script_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME input_script_unit COMMAND input_script_unit)
+
   add_executable(serial_unit
     tests/test_serial.c
     src/dev_serial.c

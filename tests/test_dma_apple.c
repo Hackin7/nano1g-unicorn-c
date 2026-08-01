@@ -85,6 +85,12 @@ int main(void) {
                     "Apple LCD DMA request remained armed after completion") ||
         expect_true(s.dma.lcd_transfers[0] == 1u,
                     "Apple LCD DMA transfer count was incorrect") ||
+        expect_true(s.dma.lcd_geometry_accepts == 1u &&
+                    s.dma.lcd_geometry_mismatches == 0u,
+                    "Apple LCD DMA geometry accounting rejected a matching transfer") ||
+        expect_true(s.dma.lcd_descriptor_pixels == 8u &&
+                    s.dma.lcd_block_pixels == 8u,
+                    "Apple LCD DMA accepted unequal descriptor and block geometry") ||
         expect_true((s.intc.cpu_status & APPLE_DMA_IRQ_BIT) != 0u,
                     "Apple linked DMA service did not assert IRQ 26");
 
@@ -124,7 +130,14 @@ int main(void) {
         expect_true(s.counters.lcd_words == words_after_completion,
                     "Apple LCD DMA ran against a mismatched setup block") ||
         expect_true(s.dma.lcd_request_armed[0],
-                    "Apple LCD DMA disarmed while waiting for the real block");
+                    "Apple LCD DMA disarmed while waiting for the real block") ||
+        expect_true(s.dma.lcd_geometry_accepts == 1u &&
+                    s.dma.lcd_geometry_mismatches == 1u,
+                    "Apple LCD DMA mismatch was not recorded exactly once");
+    n1g_dev_dma_tick(&s);
+    failed = failed ||
+        expect_true(s.dma.lcd_geometry_mismatches == 1u,
+                    "Apple LCD DMA recounted a polled geometry mismatch");
 
     n1g_dev_lcd2_write(&s, 0x24u, 4, 16u - 1u);
     n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);
@@ -135,7 +148,11 @@ int main(void) {
         expect_true(!s.dma.lcd_request_armed[0],
                     "Apple LCD DMA remained armed after the deferred transfer") ||
         expect_true(s.dma.lcd_transfers[0] == 2u,
-                    "Apple deferred LCD DMA transfer count was incorrect");
+                    "Apple deferred LCD DMA transfer count was incorrect") ||
+        expect_true(s.dma.lcd_geometry_accepts == 2u &&
+                    s.dma.lcd_descriptor_pixels == 16u &&
+                    s.dma.lcd_block_pixels == 16u,
+                    "Apple deferred LCD DMA geometry totals were inconsistent");
 
     memset(&s.lcd2, 0, sizeof(s.lcd2));
     lcd_command_data(&s, LCD_CNTL_HORIZ_RAM_ADDR_POS, 0xaf00u);

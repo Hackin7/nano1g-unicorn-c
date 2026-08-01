@@ -31,13 +31,14 @@ an acceptance-path shortcut.
 - [x] Add a deterministic Apple regression covering Language -> main menu ->
       Extras with Clock highlighted.
 - [x] Assert `lcd_overruns=0` throughout that navigation sequence.
-- [ ] Assert every accepted Apple DMA descriptor matches the active LCD block
+- [x] Assert every accepted Apple DMA descriptor matches the active LCD block
       pixel count.
-- [ ] Capture and validate settled framebuffer artifacts at each transition.
+- [x] Capture and validate settled framebuffer artifacts at each transition.
 - [ ] Add a long interactive stress test with repeated menu entry, exit,
       scrolling, and animation.
-- [ ] Distinguish settled frames from intermediate animation frames in tests.
-- [ ] Keep the equivalent Rockbox LCD and menu tests passing.
+- [x] Distinguish settled frames from intermediate animation frames in tests
+      by placing hash-checked checkpoints after calibrated settle waits.
+- [x] Keep the equivalent Rockbox LCD and menu tests passing.
 
 Completion signal: the formerly corrupt Language and Extras transitions are
 reproducible in automation, remain aligned after long navigation, and report no
