@@ -133,6 +133,10 @@ Useful options:
   split hot translated blocks or distort firmware timing.
 - `--verbose`: enable the fuller Apple probe/logging hook set and extra tracing;
   it implies Apple diagnostics.
+- `--host-profile`: report high-resolution host time spent in CPU, COP,
+  device-tick, input, web, and residual run-loop work, followed by the busiest
+  exact MMIO addresses. High-resolution timing and histogram collection are
+  disabled unless this option is enabled.
 - `--trace-pc`: log translated basic blocks. This is very slow.
 - `--trace-mmio`: log MMIO accesses. This is very slow.
 - `--load-addr ADDR`: override firmware load address, default `0x10000000`.
@@ -366,7 +370,8 @@ Implemented foundation:
 - `smoke_stage0_sysinfo_osos` extends that no-HLE canary into Apple firmware:
   a native ARM stage0 reads the real FAT `SysInfo` sector, publishes the Nano
   fast-RAM handoff table, loads the full wrapped Apple `osos` payload from the
-  disk firmware partition through ATA, and branches into `osos`. The smoke
+  disk firmware partition through modeled PP502x ATA DMA, then branches into
+  `osos`. The smoke
   verifies the native Apple handoff probe sees `IsyS`, the real SysInfo pointer,
   and model word `0x02000000`. With USB MMIO mapped, the same smoke now reaches
   the native language loop, view delivery, and LCD dirty/post path. It still is

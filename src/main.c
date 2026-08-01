@@ -14,7 +14,81 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
 static volatile sig_atomic_t stop_requested;
+
+typedef struct n1g_host_profile {
+    uint64_t started_ns;
+    uint64_t cpu_ns;
+    uint64_t cop_ns;
+    uint64_t bus_ns;
+    uint64_t input_ns;
+    uint64_t web_ns;
+    uint64_t slices;
+    uint64_t cpu_calls;
+    uint64_t cop_calls;
+    uint64_t web_polls;
+} n1g_host_profile_t;
+
+static uint64_t host_profile_now_ns(void) {
+#if defined(_WIN32)
+    static LARGE_INTEGER frequency;
+    LARGE_INTEGER counter;
+    if (frequency.QuadPart == 0 && !QueryPerformanceFrequency(&frequency)) {
+        return 0;
+    }
+    if (!QueryPerformanceCounter(&counter)) {
+        return 0;
+    }
+    uint64_t whole = (uint64_t)(counter.QuadPart / frequency.QuadPart);
+    uint64_t remainder = (uint64_t)(counter.QuadPart % frequency.QuadPart);
+    return whole * 1000000000ull +
+           remainder * 1000000000ull / (uint64_t)frequency.QuadPart;
+#else
+    struct timespec ts;
+    if (timespec_get(&ts, TIME_UTC) != TIME_UTC) {
+        return 0;
+    }
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+#endif
+}
+
+static void host_profile_add(uint64_t *total_ns, uint64_t started_ns) {
+    uint64_t finished_ns = host_profile_now_ns();
+    if (finished_ns >= started_ns) {
+        *total_ns += finished_ns - started_ns;
+    }
+}
+
+static void host_profile_report(n1g_state_t *s, const n1g_host_profile_t *profile) {
+    uint64_t finished_ns = host_profile_now_ns();
+    uint64_t total_ns = finished_ns >= profile->started_ns
+                            ? finished_ns - profile->started_ns
+                            : 0;
+    uint64_t accounted_ns = profile->cpu_ns + profile->cop_ns + profile->bus_ns +
+                            profile->input_ns + profile->web_ns;
+    uint64_t loop_ns = total_ns >= accounted_ns ? total_ns - accounted_ns : 0;
+    n1g_info(s,
+             "host_profile total_ns=%llu cpu_ns=%llu cop_ns=%llu bus_ns=%llu input_ns=%llu web_ns=%llu loop_ns=%llu slices=%llu cpu_calls=%llu cop_calls=%llu web_polls=%llu",
+             (unsigned long long)total_ns,
+             (unsigned long long)profile->cpu_ns,
+             (unsigned long long)profile->cop_ns,
+             (unsigned long long)profile->bus_ns,
+             (unsigned long long)profile->input_ns,
+             (unsigned long long)profile->web_ns,
+             (unsigned long long)loop_ns,
+             (unsigned long long)profile->slices,
+             (unsigned long long)profile->cpu_calls,
+             (unsigned long long)profile->cop_calls,
+             (unsigned long long)profile->web_polls);
+    n1g_bus_host_profile_report(s);
+}
 
 static void handle_stop_signal(int sig) {
     (void)sig;
@@ -52,7 +126,7 @@ static void usage(void) {
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
     puts("       [--battery-percent N] [--main-charger] [--usb-charger]");
     puts("       [--web PORT] [--web-no-hold] [--run-forever]");
-    puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--verbose]");
+    puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--host-profile] [--verbose]");
 }
 
 static bool parse_profile(const char *v, n1g_profile_t *out) {
@@ -188,6 +262,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.trace_mmio = true;
         } else if (strcmp(a, "--apple-diagnostics") == 0) {
             opts.apple_diagnostics = true;
+        } else if (strcmp(a, "--host-profile") == 0) {
+            opts.host_profile = true;
         } else if (strcmp(a, "--verbose") == 0) {
             opts.verbose = true;
         } else {
@@ -241,6 +317,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool trace_pc = opts->trace_pc;
     const bool trace_mmio = opts->trace_mmio;
     const bool apple_diagnostics = opts->apple_diagnostics;
+    const bool host_profile = opts->host_profile;
     const bool verbose = opts->verbose;
 
     memset(opts, 0, sizeof(*opts));
@@ -254,6 +331,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->trace_pc = trace_pc;
     opts->trace_mmio = trace_mmio;
     opts->apple_diagnostics = apple_diagnostics;
+    opts->host_profile = host_profile;
     opts->verbose = verbose;
     opts->rtc_usec_per_tick = 1;
     opts->timer_divider = 20;
@@ -494,6 +572,11 @@ run_image:
     do {
         restart_now = false;
         restart_preset[0] = '\0';
+        n1g_host_profile_t host_profile;
+        memset(&host_profile, 0, sizeof(host_profile));
+        if (s.opts.host_profile) {
+            host_profile.started_ns = host_profile_now_ns();
+        }
         n1g_info(&s, "start image=%s max_insns=%llu slice_insns=%u timer_divider=%u rtc_usec_per_tick=%u run_forever=%u map_flash_zero=%u virtual_memmap=%u",
                  s.opts.run_label ? s.opts.run_label : "custom",
                  (unsigned long long)s.opts.max_insns,
@@ -509,34 +592,74 @@ run_image:
             if (!s.opts.run_forever && remaining < slice) {
                 slice = (uint32_t)remaining;
             }
-            if (!n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice)) {
+            uint64_t part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
+            bool cpu_ok = n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice);
+            if (s.opts.host_profile) {
+                host_profile_add(&host_profile.cpu_ns, part_started_ns);
+                host_profile.cpu_calls++;
+            }
+            if (!cpu_ok) {
                 break;
             }
             if (!s.cpu[N1G_CORE_COP].halted) {
-                if (!n1g_cpu_step_slice(&s, N1G_CORE_COP, slice)) {
+                part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
+                bool cop_ok = n1g_cpu_step_slice(&s, N1G_CORE_COP, slice);
+                if (s.opts.host_profile) {
+                    host_profile_add(&host_profile.cop_ns, part_started_ns);
+                    host_profile.cop_calls++;
+                }
+                if (!cop_ok) {
                     break;
                 }
             }
+            part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
             n1g_bus_tick(&s);
+            if (s.opts.host_profile) {
+                host_profile_add(&host_profile.bus_ns, part_started_ns);
+            }
             if (s.opts.input_script) {
+                part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
                 n1g_input_script_tick(&s);
+                if (s.opts.host_profile) {
+                    host_profile_add(&host_profile.input_ns, part_started_ns);
+                }
+            }
+            if (s.opts.host_profile) {
+                host_profile.slices++;
             }
             if (!s.opts.run_forever) {
                 remaining -= slice;
             }
             if (s.opts.web_enabled && (s.counters.device_ticks & 0xffu) == 0) {
+                part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
                 n1g_web_poll(&s, &web, true);
                 if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
                     restart_now = true;
+                    if (s.opts.host_profile) {
+                        host_profile_add(&host_profile.web_ns, part_started_ns);
+                        host_profile.web_polls++;
+                    }
                     break;
+                }
+                if (s.opts.host_profile) {
+                    host_profile_add(&host_profile.web_ns, part_started_ns);
+                    host_profile.web_polls++;
                 }
             }
         }
         if (s.opts.web_enabled) {
+            uint64_t part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
             n1g_web_poll(&s, &web, false);
             if (!restart_now && n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
                 restart_now = true;
             }
+            if (s.opts.host_profile) {
+                host_profile_add(&host_profile.web_ns, part_started_ns);
+                host_profile.web_polls++;
+            }
+        }
+        if (s.opts.host_profile) {
+            host_profile_report(&s, &host_profile);
         }
 
         if (!restart_now) {

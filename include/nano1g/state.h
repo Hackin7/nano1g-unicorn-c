@@ -68,6 +68,7 @@ typedef struct n1g_opts {
     bool trace_pc;
     bool trace_mmio;
     bool apple_diagnostics;
+    bool host_profile;
     bool verbose;
     uint32_t probe_pc[16];
     uint32_t probe_pc_count;
@@ -320,6 +321,14 @@ typedef struct n1g_input_script {
     uint64_t wait_left;
 } n1g_input_script_t;
 
+#define N1G_HOST_MMIO_PROFILE_SLOTS 4096u
+
+typedef struct n1g_host_mmio_profile_entry {
+    uint32_t addr;
+    uint64_t reads;
+    uint64_t writes;
+} n1g_host_mmio_profile_entry_t;
+
 typedef struct n1g_counters {
     uint64_t guest_insns;
     uint64_t device_ticks;
@@ -391,6 +400,8 @@ typedef struct n1g_state {
     n1g_flash_t flash;
     n1g_ppcon_t ppcon;
     n1g_counters_t counters;
+    n1g_host_mmio_profile_entry_t host_mmio_profile[N1G_HOST_MMIO_PROFILE_SLOTS];
+    uint64_t host_mmio_profile_overflow;
     FILE *trace;
     void *mmio_contexts[32];
     size_t mmio_context_count;

@@ -31,8 +31,19 @@ read_sectors:
     mov r5, r1               @ destination
     mov r6, r2               @ sectors remaining
 
-sector_loop:
-    mov r0, #1
+dma_chunk:
+    cmp r6, #256
+    movhi r7, #256
+    movls r7, r6             @ ATA sector count is eight bits; zero means 256
+
+    ldr r0, =0x0003000a
+    str r0, [r12, #0x400]    @ DMA direction/config, engine stopped
+    mov r0, r7, lsl #9
+    sub r0, r0, #4
+    str r0, [r12, #0x408]    @ PP502x DMA length is byte count minus four
+    str r5, [r12, #0x40c]
+
+    and r0, r7, #0xff
     str r0, [r12, #0x08]
     and r0, r4, #0xff
     str r0, [r12, #0x0c]
@@ -46,24 +57,22 @@ sector_loop:
     and r0, r0, #0x0f
     orr r0, r0, #0xe0
     str r0, [r12, #0x18]
-    mov r0, #0x20
+    mov r0, #0xc8            @ READ DMA
     str r0, [r12, #0x1c]
 
-wait_drq:
+    ldr r0, [r12, #0x400]
+    orr r0, r0, #1
+    str r0, [r12, #0x400]
+
+wait_dma:
     ldr r0, [r12, #0x1c]
-    tst r0, #0x08
-    beq wait_drq
+    tst r0, #0x88            @ wait while BSY or DRQ remains asserted
+    bne wait_dma
 
-    mov r7, #256
-copy_words:
-    ldrh r0, [r12]
-    strh r0, [r5], #2
-    subs r7, r7, #1
-    bne copy_words
-
-    add r4, r4, #1
-    subs r6, r6, #1
-    bne sector_loop
+    add r4, r4, r7
+    add r5, r5, r7, lsl #9
+    subs r6, r6, r7
+    bne dma_chunk
 
     pop {r4-r8, lr}
     bx lr

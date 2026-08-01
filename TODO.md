@@ -54,7 +54,9 @@ stale DMA replay or LCD block overrun.
       partition and enters it without the stage0 probe.
 - [ ] Remove the stage0 canary from the primary Apple acceptance route once the
       stock cold-boot route is proven.
-- [ ] Preserve stage0 as a diagnostic fixture rather than deleting it.
+- [x] Preserve stage0 as a native diagnostic fixture rather than deleting it.
+- [x] Use modeled PP502x ATA DMA for the stage0 fixture's bulk `osos` load
+      instead of spending millions of guest instructions in a PIO copy loop.
 
 Completion signal: the `Apple official boot` preset reaches the same working
 menus from a real reset-vector ROM without host-created boot metadata or native
@@ -150,12 +152,16 @@ can enter, use, and leave its expected USB modes without register stubs.
 
 ## P2: CPU, COP, Interrupt, DMA, And Timing Accuracy
 
+- [x] Add opt-in host boundary timing and exact-address MMIO frequency
+      profiling without adding normal Apple code hooks.
 - [x] Remove read-only Apple progress hooks from normal execution and expose
       them explicitly through `--apple-diagnostics` so probes do not distort
       firmware timing.
 - [ ] Raise normal Apple throughput from the measured 14.1 MIPS early-boot
       rate toward the modeled 64 MIPS rate without reducing peripheral timing
       resolution or skipping guest-visible work.
+- [ ] Investigate Unicorn MMIO transition cost and the official firmware's
+      sustained ATA PIO traffic without intercepting or skipping guest loops.
 - [ ] Audit CPU/COP scheduling and mailbox behavior under sustained dual-core
       workloads.
 - [ ] Improve interrupt priority, masking, forced-interrupt, and acknowledgement

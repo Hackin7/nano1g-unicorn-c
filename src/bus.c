@@ -11,6 +11,95 @@ static uint32_t mask_value(uint32_t value, uint32_t size) {
     return value;
 }
 
+static void host_profile_mmio(n1g_state_t *s, uint32_t addr, bool write) {
+    if (!s->opts.host_profile) {
+        return;
+    }
+    uint32_t slot = ((addr >> 2u) * 2654435761u) & (N1G_HOST_MMIO_PROFILE_SLOTS - 1u);
+    for (uint32_t probe = 0; probe < N1G_HOST_MMIO_PROFILE_SLOTS; probe++) {
+        n1g_host_mmio_profile_entry_t *entry = &s->host_mmio_profile[slot];
+        if ((entry->reads == 0u && entry->writes == 0u) || entry->addr == addr) {
+            entry->addr = addr;
+            if (write) {
+                entry->writes++;
+            } else {
+                entry->reads++;
+            }
+            return;
+        }
+        slot = (slot + 1u) & (N1G_HOST_MMIO_PROFILE_SLOTS - 1u);
+    }
+    s->host_mmio_profile_overflow++;
+}
+
+static const char *host_profile_mmio_device(uint32_t addr) {
+    if (addr < N1G_FLASH_BASE + N1G_FLASH_SIZE) return "flash";
+    if (addr >= N1G_FLASH_ALIAS_BASE && addr < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE) return "flash_alias";
+    if (addr >= N1G_CPUID_BASE && addr <= N1G_CPUID_BASE + 0xfff) return "cpuid";
+    if (addr >= N1G_MAILBOX_BASE && addr <= N1G_MAILBOX_BASE + 0x2f) return "mailbox";
+    if (addr >= N1G_INTC_BASE && addr <= N1G_INTC_BASE + 0x1ff) return "intc";
+    if (addr >= N1G_TIMER_BASE && addr <= N1G_TIMER_BASE + 0x17) return "timer";
+    if (addr >= N1G_DEVCON_BASE && addr <= N1G_DEVCON_BASE + 0xfff) return "devcon";
+    if (addr >= N1G_CPUCON_BASE && addr <= N1G_CPUCON_BASE + 0xfff) return "cpucon";
+    if (addr >= N1G_DMA_BASE && addr <= N1G_DMA_BASE + 0x1fff) return "dma";
+    if (addr >= N1G_GPIO_BASE && addr <= N1G_GPIO_BASE + 0x9ff) return "gpio";
+    if (addr >= N1G_CACHECON_BASE && addr <= N1G_CACHECON_BASE + 0xfff) return "cachecon";
+    if (addr >= N1G_EVP_BASE && addr <= N1G_EVP_BASE + 0x1f) return "evp";
+    if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) return "ppcon";
+    if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) return "lcd2";
+    if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) return "i2s";
+    if (addr >= N1G_I2C_BASE && addr <= N1G_I2C_BASE + 0xff) return "i2c";
+    if (addr >= N1G_SERIAL0_BASE && addr < N1G_SERIAL0_BASE + 0x40) return "serial0";
+    if (addr >= N1G_SERIAL1_BASE && addr < N1G_SERIAL1_BASE + 0x40) return "serial1";
+    if (addr >= N1G_OPTO_BASE && addr <= N1G_OPTO_BASE + 0xff) return "opto";
+    if (addr >= N1G_EIDE_BASE && addr <= N1G_EIDE_BASE + 0xfff) return "eide";
+    if (addr >= N1G_USB_BASE && addr <= N1G_USB_BASE + 0xfff) return "usb";
+    if (addr >= N1G_MEMCON_BASE && addr <= N1G_MEMCON_BASE + 0xffff) return "memcon";
+    return "unrouted";
+}
+
+void n1g_bus_host_profile_report(n1g_state_t *s) {
+    n1g_host_mmio_profile_entry_t top[16] = {{0}};
+    for (uint32_t i = 0; i < N1G_HOST_MMIO_PROFILE_SLOTS; i++) {
+        n1g_host_mmio_profile_entry_t candidate = s->host_mmio_profile[i];
+        uint64_t candidate_total = candidate.reads + candidate.writes;
+        if (candidate_total == 0u) {
+            continue;
+        }
+        for (uint32_t rank = 0; rank < 16u; rank++) {
+            uint64_t rank_total = top[rank].reads + top[rank].writes;
+            if (candidate_total > rank_total ||
+                (candidate_total == rank_total && candidate.addr < top[rank].addr)) {
+                for (uint32_t move = 15u; move > rank; move--) {
+                    top[move] = top[move - 1u];
+                }
+                top[rank] = candidate;
+                break;
+            }
+        }
+    }
+    for (uint32_t rank = 0; rank < 16u; rank++) {
+        uint64_t total = top[rank].reads + top[rank].writes;
+        if (total == 0u) {
+            break;
+        }
+        n1g_info(s,
+                 "host_mmio rank=%u addr=0x%08x device=%s reads=%llu writes=%llu total=%llu",
+                 rank + 1u,
+                 top[rank].addr,
+                 host_profile_mmio_device(top[rank].addr),
+                 (unsigned long long)top[rank].reads,
+                 (unsigned long long)top[rank].writes,
+                 (unsigned long long)total);
+    }
+    if (s->host_mmio_profile_overflow != 0u) {
+        n1g_info(s,
+                 "host_mmio overflow=%llu slots=%u",
+                 (unsigned long long)s->host_mmio_profile_overflow,
+                 N1G_HOST_MMIO_PROFILE_SLOTS);
+    }
+}
+
 /* First-access log for MMIO addresses that fall through every device route.
  * One line per 64-byte block keeps verbose runs readable while still
  * surfacing each unmodeled register bank native firmware touches. */
@@ -52,6 +141,7 @@ void n1g_dev_stub_write(n1g_state_t *s, const char *name, uint32_t base, uint32_
 uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t size) {
     uint32_t out = 0;
     s->counters.mmio_reads++;
+    host_profile_mmio(s, addr, false);
     if (n1g_ram_read(s, addr, size, &out)) {
         return out;
     }
@@ -127,6 +217,7 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
 
 void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t size, uint32_t value) {
     s->counters.mmio_writes++;
+    host_profile_mmio(s, addr, true);
     if (n1g_ram_write(s, addr, size, value)) {
         return;
     }

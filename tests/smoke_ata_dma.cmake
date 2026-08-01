@@ -37,6 +37,7 @@ execute_process(
     --entry 0x10000000
     --max-insns 240
     --slice-insns 1
+    --host-profile
     --dump32 0x40000100
     --dump-count 9
   RESULT_VARIABLE result
@@ -52,3 +53,12 @@ string(FIND "${output}" "dump32 addr=0x40000100 0x00800000 0x00000018 0x0003000b
 if(dma_pos EQUAL -1)
   message(FATAL_ERROR "ATA DMA smoke observed wrong transfer state: ${output}")
 endif()
+
+foreach(required
+    "host_profile total_ns="
+    "host_mmio rank=1")
+  string(FIND "${output}" "${required}" pos)
+  if(pos EQUAL -1)
+    message(FATAL_ERROR "ATA DMA smoke missing host profile '${required}': ${output}")
+  endif()
+endforeach()

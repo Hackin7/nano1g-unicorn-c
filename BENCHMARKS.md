@@ -7,6 +7,41 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-02: Host profiling and native DMA stage0
+
+Added opt-in `--host-profile` timing around CPU, COP, device-tick, input, web,
+and residual run-loop work, plus a 4096-slot exact-address MMIO histogram. The
+option does not install code hooks or alter guest state. The fixture-free ATA
+DMA smoke verifies both the timing summary and MMIO ranking output.
+
+A 175,000,000-instruction Apple stage0 run showed that 30.361 of 30.465 profiled
+seconds (99.66%) were inside CPU slice execution. Device ticks consumed only
+0.065 seconds. The first complete MMIO profile found 3,162,370 reads of the ATA
+data port across its convenience address `0xc3000000` and hardware task-file
+address `0xc30001e0`, out of 3,342,906 total MMIO reads. A direct EIDE dispatch
+experiment measured 30.355 seconds against a 30.372-second baseline, which was
+noise; that code was removed rather than retaining an ineffective fast path.
+
+The dominant `0xc3000000` traffic came from the native ARM stage0 canary loading
+the 10,872-sector `osos` payload one halfword at a time. The canary now programs
+the modeled PP502x ATA DMA control, length, destination, task-file, and READ DMA
+command registers in chunks of at most 256 sectors, then polls command status
+until the device tick completes each transfer. This remains guest-executed ARM
+code and does not copy firmware through a host shim.
+
+The DMA canary reaches a valid `IsyS` handoff within a 100,000-instruction run
+(0.388 seconds in the measured diagnostic invocation), versus more than 11
+million guest instructions inherent in the old PIO copy loop. At five million
+instructions it reported the same 2,788,096 disk words transferred while ATA
+MMIO traffic fell to roughly 12,000 accesses. A 175,000,000-instruction run
+produced the same framebuffer SHA-256 as the PIO canary:
+`258B8B954716187DCAB9C8807D6F1CA01F57357B501A5658C9D8E23BAB2BD822`.
+
+The Apple firmware later performs its own PIO through `0xc30001e0`; that traffic
+remains modeled exactly. Fixed total-instruction wall times after this change
+are not directly comparable because removing stage0 copy instructions gives
+the Apple firmware more of the same instruction budget.
+
 ## 2026-08-02: Apple diagnostic-hook isolation
 
 Normal Apple runs previously installed roughly sixty read-only
