@@ -25,6 +25,11 @@
 #define WM8975_ROUTMIX2 0x25u
 #define WM8975_ROUTMIX2_RD2RO (1u << 8u)
 
+#define PCF50605_OOCC1 0x08u
+#define PCF50605_OOCC1_GOSTDBY 0x01u
+#define PCF50605_INT1 0x02u
+#define PCF50605_INT3 0x04u
+
 static int32_t wm8975_volume_q15(uint16_t value) {
     uint32_t level = value & 0x7fu;
     if (level < 0x30u) {
@@ -215,9 +220,18 @@ static uint8_t pcf_rtc_read(n1g_state_t *s, uint8_t reg) {
 static uint8_t pcf_read(n1g_state_t *s) {
     uint8_t reg = s->i2c.pcf_reg_set ? s->i2c.pcf_reg++ : 0;
     s->i2c.pcf_reg_set = true;
+    if (reg < sizeof(s->i2c.pcf_reg_reads) / sizeof(s->i2c.pcf_reg_reads[0])) {
+        s->i2c.pcf_reg_reads[reg]++;
+    }
 
     if (reg >= 0x0au && reg <= 0x10u) {
         return pcf_rtc_read(s, reg);
+    }
+
+    if (reg >= PCF50605_INT1 && reg <= PCF50605_INT3) {
+        uint8_t value = s->i2c.pcf_regs[reg];
+        s->i2c.pcf_regs[reg] = 0u;
+        return value;
     }
 
     if (reg < sizeof(s->i2c.pcf_regs) && (s->i2c.pcf_written & (1ull << reg)) != 0) {
@@ -226,9 +240,6 @@ static uint8_t pcf_read(n1g_state_t *s) {
 
     switch (reg) {
     case 0x00: /* ID */
-    case 0x02: /* INT1 */
-    case 0x03: /* INT2 */
-    case 0x04: /* INT3 */
         return 0;
     case 0x30: { /* ADCS1: upper 8 bits of the 10-bit battery ADC reading. */
         uint32_t raw = battery_percent_to_adc_raw(s->opts.battery_percent);
@@ -255,10 +266,17 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
         return;
     }
     if (s->i2c.pcf_reg < sizeof(s->i2c.pcf_regs)) {
-        s->i2c.pcf_regs[s->i2c.pcf_reg] = value;
-        s->i2c.pcf_written |= 1ull << s->i2c.pcf_reg;
-        if (s->i2c.pcf_reg >= 0x0au && s->i2c.pcf_reg <= 0x10u) {
-            s->i2c.rtc_base_ticks = s->counters.device_ticks;
+        uint8_t reg = s->i2c.pcf_reg;
+        s->i2c.pcf_reg_writes[reg]++;
+        if (reg < PCF50605_INT1 || reg > PCF50605_INT3) {
+            s->i2c.pcf_regs[reg] = value;
+            s->i2c.pcf_written |= 1ull << reg;
+            if (reg == PCF50605_OOCC1 && (value & PCF50605_OOCC1_GOSTDBY) != 0u) {
+                s->i2c.pcf_standby_requests++;
+            }
+            if (reg >= 0x0au && reg <= 0x10u) {
+                s->i2c.rtc_base_ticks = s->counters.device_ticks;
+            }
         }
     }
     s->i2c.pcf_reg++;

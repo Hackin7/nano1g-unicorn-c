@@ -2152,10 +2152,28 @@ static void hook_probe_pc(uc_engine *uc, uint64_t address, uint32_t size, void *
     for (int i = 0; i < 7; i++) {
         uc_reg_read(uc, regs[i], &r[i]);
     }
+    uint32_t r1_payload = ram_read32_or_zero(s, r[1] + 44u) & ~1u;
+    uint32_t r1_bytecode = ram_read32_or_zero(s, r1_payload + 72u);
     n1g_info(s,
-             "probe pc=0x%08x r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r12=0x%08x lr=0x%08x sp=0x%08x ticks=%llu",
+             "probe pc=0x%08x r0=0x%08x r1=0x%08x r2=0x%08x r3=0x%08x r12=0x%08x lr=0x%08x sp=0x%08x r0w=0x%08x,0x%08x,0x%08x,0x%08x r1w=0x%08x,0x%08x,0x%08x,0x%08x r1meta=0x%08x,0x%08x,0x%08x,0x%08x r1code=0x%08x,0x%08x,0x%08x,0x%08x ticks=%llu",
              (uint32_t)address,
              r[0], r[1], r[2], r[3], r[4], r[5], r[6],
+             ram_read32_or_zero(s, r[0]),
+             ram_read32_or_zero(s, r[0] + 4u),
+             ram_read32_or_zero(s, r[0] + 8u),
+             ram_read32_or_zero(s, r[0] + 12u),
+             ram_read32_or_zero(s, r[1]),
+             ram_read32_or_zero(s, r[1] + 4u),
+             ram_read32_or_zero(s, r[1] + 8u),
+             ram_read32_or_zero(s, r[1] + 12u),
+             ram_read32_or_zero(s, r[1] + 52u),
+             r1_payload,
+             ram_read32_or_zero(s, r1_payload + 56u),
+             r1_bytecode,
+             ram_read32_or_zero(s, r1_bytecode),
+             ram_read32_or_zero(s, r1_bytecode + 4u),
+             ram_read32_or_zero(s, r1_bytecode + 8u),
+             ram_read32_or_zero(s, r1_bytecode + 12u),
              (unsigned long long)s->counters.device_ticks);
 }
 

@@ -258,6 +258,9 @@ typedef struct n1g_i2c {
     uint8_t pcf_reg;
     uint8_t pcf_regs[0x40];
     uint64_t pcf_written;
+    uint64_t pcf_reg_reads[0x40];
+    uint64_t pcf_reg_writes[0x40];
+    uint64_t pcf_standby_requests;
     uint64_t rtc_base_ticks;
     bool pcf_reg_set;
 } n1g_i2c_t;

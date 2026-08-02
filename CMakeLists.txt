@@ -323,6 +323,21 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME i2c_codec_unit COMMAND i2c_codec_unit)
 
+  add_executable(i2c_pmu_unit
+    tests/test_i2c_pmu.c
+    src/dev_i2c.c
+    src/trace.c
+  )
+  target_include_directories(i2c_pmu_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(i2c_pmu_unit PRIVATE /W4)
+    else()
+      target_compile_options(i2c_pmu_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME i2c_pmu_unit COMMAND i2c_pmu_unit)
+
   add_test(NAME smoke_args COMMAND $<TARGET_FILE:nano1g> --help)
 
   find_package(Python3 COMPONENTS Interpreter QUIET)

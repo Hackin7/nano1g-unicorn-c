@@ -118,6 +118,10 @@ stereo output with stable playback controls and no unbounded buffering.
 ## P1: Power, PMU, RTC, And User Controls
 
 - [ ] Expand the PCF/PMU model beyond the registers exercised by early boot.
+- [x] Model PCF50605 INT1/INT2/INT3 as read-only, read-to-clear status
+      registers while retaining writable interrupt masks.
+- [x] Track per-register PCF access and `OOCC1.GOSTDBY` requests without
+      inventing a shutdown before guest firmware requests one.
 - [ ] Model battery voltage, capacity, charging state, charger detection, and
       low-battery behavior as coherent hardware state.
 - [ ] Model RTC date/time persistence and alarm behavior.

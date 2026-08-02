@@ -801,6 +801,22 @@ run_image:
              (unsigned long long)s.backlight.dimmer_up_pulses,
              (unsigned long long)s.backlight.dimmer_down_pulses,
              s.gpio.regs[0x12cu / 4u]);
+    if (s.i2c.addr_reads[0x08u] != 0u || s.i2c.addr_writes[0x08u] != 0u) {
+        n1g_info(&s,
+                 "pcf50605_state reads=%llu writes=%llu oocs=0x%02x int=0x%02x/0x%02x/0x%02x masks=0x%02x/0x%02x/0x%02x oocc1=0x%02x oocc1_writes=%llu standby_requests=%llu",
+                 (unsigned long long)s.i2c.addr_reads[0x08u],
+                 (unsigned long long)s.i2c.addr_writes[0x08u],
+                 (unsigned)s.i2c.pcf_regs[0x01u],
+                 (unsigned)s.i2c.pcf_regs[0x02u],
+                 (unsigned)s.i2c.pcf_regs[0x03u],
+                 (unsigned)s.i2c.pcf_regs[0x04u],
+                 (unsigned)s.i2c.pcf_regs[0x05u],
+                 (unsigned)s.i2c.pcf_regs[0x06u],
+                 (unsigned)s.i2c.pcf_regs[0x07u],
+                 (unsigned)s.i2c.pcf_regs[0x08u],
+                 (unsigned long long)s.i2c.pcf_reg_writes[0x08u],
+                 (unsigned long long)s.i2c.pcf_standby_requests);
+    }
     if (s.opts.verbose) {
         for (uint32_t addr = 0; addr < 128u; addr++) {
             if (s.i2c.addr_reads[addr] != 0u || s.i2c.addr_writes[addr] != 0u) {
@@ -825,6 +841,16 @@ run_image:
                      (unsigned)s.i2c.wm8975_regs[s.i2c.wm8975_legacy_mode ? 0x06u : 0x1au],
                      (unsigned)s.i2c.wm8975_regs[0x02u],
                      (unsigned)s.i2c.wm8975_regs[0x03u]);
+        }
+        for (uint32_t reg = 0; reg < 0x40u; reg++) {
+            if (s.i2c.pcf_reg_reads[reg] != 0u || s.i2c.pcf_reg_writes[reg] != 0u) {
+                n1g_info(&s,
+                         "pcf50605_reg reg=0x%02x reads=%llu writes=%llu value=0x%02x",
+                         reg,
+                         (unsigned long long)s.i2c.pcf_reg_reads[reg],
+                         (unsigned long long)s.i2c.pcf_reg_writes[reg],
+                         (unsigned)s.i2c.pcf_regs[reg]);
+            }
         }
     }
     n1g_info(&s,

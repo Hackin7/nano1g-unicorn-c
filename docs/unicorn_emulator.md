@@ -106,6 +106,9 @@ settle waits. `--hold-switch` starts the emulator with Hold engaged.
 - Browser click-wheel scroll and server-side tap select.
 - Native Hold-switch GPIO/IRQ handling and firmware-rendered Apple lock icon.
 - Runtime battery and charger controls backed by the existing PMU/GPIO model.
+- PCF50605 interrupt status is read-only and read-to-clear, interrupt masks
+  retain guest writes, and `OOCC1.GOSTDBY` requests are counted. Both direct
+  device and guest-I2C regressions cover these semantics.
 - Guest-controlled PWM/Nano backlight power and intensity, including Apple’s
   native timeout-off and input-wake cycle through the XMB self-refresh
   handshake.
@@ -151,3 +154,7 @@ immediate down/up requests.
   ZIPs and wrapped firmware bundles are intentionally rejected for that route.
   Current interactive Apple UI acceptance is stage0-assisted and therefore
   does not claim a stock reset-vector cold boot.
+- Apple Play-hold reaches the native `kP&H` responder and an interpreted
+  122-byte callable at runtime `0x3265bc`. In current traces it does not call
+  the Preferences writer or write `OOCC1`, so shutdown and persistence remain
+  under investigation; the emulator does not synthesize either action.
