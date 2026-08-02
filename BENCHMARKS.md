@@ -7,6 +7,33 @@ For future ad hoc runs, write generated PPM/log outputs under `tmp/`, which is
 gitignored. Historical commands below may show root-level output names from
 earlier bring-up runs.
 
+## 2026-08-03: Long native Apple menu stress
+
+`smoke_apple_menu_stress` keeps one stage0-assisted Apple guest alive for 750
+million instructions while repeating three complete Extras interaction cycles.
+After the initial Language and main-menu transitions, each cycle performs six
+clockwise and six counter-clockwise wheel packets, validates the settled Extras
+frame, exits with Menu, validates the main menu with Extras selected, and
+re-enters Extras through native firmware input handling.
+
+The gate checks 41 wheel packets, five Select presses, three Menu presses, ten
+settled checkpoints, and the final framebuffer. Every Extras checkpoint has
+pixel SHA-256
+`a202fcdf0940746ebef42d02a9060b52028c59c22f5c2e3ed25960ec8aa77947`;
+every main-menu checkpoint has pixel SHA-256
+`d42a22cbab7da0153388ae571607440b9e420e7838f9a92a1793915741116c91`.
+The test also requires zero LCD block overruns, no direct-GRAM writes, one
+accepted geometry for every completed LCD DMA transfer, equal descriptor/block
+pixel totals, and at least 200 completed transfers.
+
+The first complete stress run passed in 364.47 seconds. The follow-up focused
+gate passed `dma_apple_unit`, `input_script_unit`, `smoke_rockbox_menu`, and
+`smoke_apple_menu_navigation` in 177.93 seconds; the original Apple navigation
+case accounted for 169.94 seconds. The final serial acceptance run passed all
+71 tests in 854.90 seconds; `smoke_apple_menu_navigation` took 163.52 seconds,
+`smoke_apple_menu_stress` took 348.54 seconds, `smoke_apple_audio` took 191.22
+seconds, and `smoke_rockbox_menu` took 7.90 seconds.
+
 ## 2026-08-02: Apple settled-frame and LCD geometry acceptance
 
 Apple LCD DMA now records each transaction whose descriptor pixel count

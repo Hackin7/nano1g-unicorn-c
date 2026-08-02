@@ -272,7 +272,9 @@ Implemented foundation:
 - Apple LCD DMA records accepted and mismatched descriptor geometry. Native
   acceptance asserts every completed transfer had equal descriptor and active
   block pixel counts; calibrated input checkpoints preserve hash-checked
-  Language, main-menu, and Extras settled frames from one execution.
+  Language, main-menu, and Extras settled frames from one execution. A separate
+  750-million-instruction stress gate repeats Extras scrolling, Menu exits, and
+  native re-entry three times without resetting accumulated hardware state.
 - Headless LCD PPM output.
 - Local browser frontend via `--web PORT`, backed by the same native LCD
   framebuffer that PPM output uses, with live Rockbox input controls and audio
@@ -426,9 +428,10 @@ Implemented foundation:
   not a Language-screen success condition because no native LCD flush reaches
   the modeled LCD yet.
 - CTest smoke coverage verifies Rockbox nonblack framebuffer output, menu
-  navigation, plugin loading, and the DMA/I2S audio path, and
-  checks that the Apple smoke path stays native/no-HLE. The Apple smoke is not
-  a Language-screen acceptance test yet.
+  navigation, plugin loading, and the DMA/I2S audio path. The stage0-assisted
+  Apple acceptance path stays native/no-HLE, hash-checks settled Language,
+  main-menu, and Extras frames, and stress-tests repeated navigation. This is
+  interactive Apple UI success, not a stock reset-vector cold boot.
 - `tools/inspect_disk_image.py` verifies the local Apple/Rockbox HDD images
   carry wrapped firmware partitions at LBA 2048.
 

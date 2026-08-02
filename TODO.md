@@ -34,7 +34,7 @@ an acceptance-path shortcut.
 - [x] Assert every accepted Apple DMA descriptor matches the active LCD block
       pixel count.
 - [x] Capture and validate settled framebuffer artifacts at each transition.
-- [ ] Add a long interactive stress test with repeated menu entry, exit,
+- [x] Add a long interactive stress test with repeated menu entry, exit,
       scrolling, and animation.
 - [x] Distinguish settled frames from intermediate animation frames in tests
       by placing hash-checked checkpoints after calibrated settle waits.
@@ -231,9 +231,9 @@ tests, expected framebuffer checks, and no newly unrouted critical MMIO.
 
 ## P3: Tests, CI, And Documentation
 
-- [ ] Update `README.md` and `docs/unicorn_emulator.md` to reflect that the
+- [x] Update `README.md` and `docs/unicorn_emulator.md` to reflect that the
       stage0-assisted Apple path now reaches interactive menus and LCD output.
-- [ ] Document the distinction between stage0-assisted UI success and genuine
+- [x] Document the distinction between stage0-assisted UI success and genuine
       stock cold boot.
 - [ ] Document required local fixtures and which tests skip without them.
 - [ ] Run the complete CTest suite regularly, not only focused smoke subsets.

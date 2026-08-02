@@ -92,12 +92,15 @@ script accepts comma-separated `wait:N`, `NAME-down`, `NAME-up`, bare `NAME`,
 Frame checkpoints are written beside `--ppm` after the script's calibrated
 settle waits. `--hold-switch` starts the emulator with Hold engaged.
 
-## Verified Rockbox Capability
+## Verified Capability
 
 - Rockbox `.ipod` payload loading and boot to the main menu.
 - LCD framebuffer rendering through the native LCD2 path.
 - Apple LCD DMA descriptor/block geometry accounting and hash-checked settled
   Language, main-menu, and Extras checkpoints.
+- A slow Apple regression that executes 750 million guest instructions and
+  repeats scroll, Menu exit, and native Extras re-entry three times in one
+  uninterrupted hardware state.
 - FAT disk reads from a GPT-wrapped Rockbox content image.
 - Browser framebuffer polling and status counters.
 - Browser click-wheel scroll and server-side tap select.
@@ -146,3 +149,5 @@ immediate down/up requests.
   audible MP3 playback has not been treated as complete.
 - The Apple cold-boot path still requires a real Nano 1G boot ROM dump; updater
   ZIPs and wrapped firmware bundles are intentionally rejected for that route.
+  Current interactive Apple UI acceptance is stage0-assisted and therefore
+  does not claim a stock reset-vector cold boot.
