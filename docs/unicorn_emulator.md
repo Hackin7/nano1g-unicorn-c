@@ -162,7 +162,12 @@ immediate down/up requests.
   the Preferences writer or write `OOCC1`, so shutdown and persistence remain
   under investigation; the emulator does not synthesize either action.
 - Changing an Apple setting reaches the Preferences dirty setter at runtime
-  `0x2d408`, but neither short nor sustained Play-hold reaches the sleep/save
-  callback at runtime `0x12c5dc`. The Preferences field at offset `0xb78` is
-  filesystem flush state rather than a power flag, so forcing it would not be
-  a valid persistence fix.
+  `0x2d408`. Play-hold is not the idle/save trigger: the power manager's
+  `+0x48` timer reaches runtime `0x12c34c` after 120 seconds, while runtime
+  `0x12c5dc` belongs to the separate `+0x74` follow-on timer. The idle guard
+  legitimately waits for the firmware activity manager to release startup
+  work. With an accelerated RTC, 33 built-in `Resources/TrainerTemplates`
+  entries can still be loading when the first timeout fires; after startup
+  settles, native input rearms the timer, Apple turns the backlight off, and a
+  native button IRQ wakes it. Shutdown and Preferences persistence remain
+  separate investigations, and the emulator does not synthesize either.

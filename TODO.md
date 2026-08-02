@@ -130,7 +130,8 @@ stereo output with stable playback controls and no unbounded buffering.
 - [ ] Model RTC date/time persistence and alarm behavior.
 - [ ] Model sleep, wake, power-off, and wake-source transitions.
 - [x] Model the XMB RAM self-refresh request/status handshake used by Apple’s
-      backlight timeout path, and verify a native button IRQ wakes the display.
+      backlight timeout path, verify the post-startup 120-second native idle
+      callback turns the display off, and verify a button IRQ wakes it.
 - [x] Verify hold-switch semantics, GPIO interrupt acknowledgement, native
       Apple lock-icon rendering, and button/wheel suppression.
 - [x] Model PP502x PWM and Nano pulse-dimmer backlight state, GPIOL power,
@@ -199,6 +200,9 @@ can enter, use, and leave its expected USB modes without register stubs.
 - [ ] Expand PP502x MMAP/remap cases beyond the documented iPod boot mapping.
 - [ ] Calibrate timers and RTC progression against guest-visible time rather
       than relying on preset-specific tuning.
+- [ ] Keep accelerated Apple timing tests behind a post-startup activity gate;
+      a 32x RTC scale can otherwise expire the idle timer while native trainer
+      resources are still loading, which is not a hardware failure.
 - [ ] Reduce sensitivity to `--slice-insns`, `--timer-divider`, and
       `--rtc-usec-per-tick` while retaining deterministic tests.
 - [ ] Add long-run invariants for lost interrupts, stuck DMA requests, timer
