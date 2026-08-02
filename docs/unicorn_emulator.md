@@ -109,6 +109,9 @@ settle waits. `--hold-switch` starts the emulator with Hold engaged.
 - PCF50605 interrupt status is read-only and read-to-clear, interrupt masks
   retain guest writes, and `OOCC1.GOSTDBY` requests are counted. Both direct
   device and guest-I2C regressions cover these semantics.
+- ATA Device Control software reset aborts active transfers, holds BSY until a
+  device tick after release, restores the reset signature, and clears multiple
+  mode without raising an IRQ.
 - Guest-controlled PWM/Nano backlight power and intensity, including Apple’s
   native timeout-off and input-wake cycle through the XMB self-refresh
   handshake.
@@ -158,3 +161,8 @@ immediate down/up requests.
   122-byte callable at runtime `0x3265bc`. In current traces it does not call
   the Preferences writer or write `OOCC1`, so shutdown and persistence remain
   under investigation; the emulator does not synthesize either action.
+- Changing an Apple setting reaches the Preferences dirty setter at runtime
+  `0x2d408`, but neither short nor sustained Play-hold reaches the sleep/save
+  callback at runtime `0x12c5dc`. The Preferences field at offset `0xb78` is
+  filesystem flush state rather than a power flag, so forcing it would not be
+  a valid persistence fix.

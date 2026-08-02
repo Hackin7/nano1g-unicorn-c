@@ -323,6 +323,10 @@ Implemented foundation:
   ABRT. SET MULTIPLE MODE validates the requested block count, supports the
   ATA-defined zero-count disable operation, and updates IDENTIFY word 59. A
   native ARM probe covers disabled, enabled, and rejected negotiation paths.
+- ATA Device Control SRST cancels active PIO, DMA, and non-data transfers,
+  holds BSY while asserted, restores the ATA reset signature after release,
+  clears multiple mode, and does not raise an interrupt. A native ARM probe
+  verifies the transition and signature.
 - PIO and DMA requests are bounded by the capacity reported in IDENTIFY words
   60-61. Transfers that begin beyond the medium or cross its final sector stop
   with IDNF and an IRQ, while the taskfile LBA/count identify the first failing

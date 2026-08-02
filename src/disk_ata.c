@@ -54,6 +54,7 @@
 #define PP_IDE_DMA_UNKNOWN 0x410u
 #define PP5020_IDE_IRQ_BIT (1u << 23)
 #define ATA_DEVCTL_NIEN 0x02u
+#define ATA_DEVCTL_SRST 0x04u
 
 typedef enum n1g_ata_transfer {
     N1G_ATA_TRANSFER_NONE = 0,
@@ -68,6 +69,19 @@ static void schedule_nondata_command(n1g_state_t *s,
                                      uint8_t error,
                                      bool update_multiple,
                                      uint8_t multiple_count);
+
+static void cancel_transfer(n1g_state_t *s) {
+    s->disk.transfer_kind = N1G_ATA_TRANSFER_NONE;
+    s->disk.dma_pending = false;
+    s->disk.pio_data_pending = false;
+    s->disk.pio_ready_irq = false;
+    s->disk.pio_completion_pending = false;
+    s->disk.nondata_pending = false;
+    s->disk.pending_multiple_update = false;
+    s->disk.pending_error = 0;
+    s->disk.data_index = 0;
+    s->disk.sectors_remaining = 0;
+}
 
 static void set_word(uint8_t *buf, uint32_t index, uint16_t value) {
     buf[index * 2u] = (uint8_t)(value & 0xffu);
@@ -560,7 +574,44 @@ static void schedule_command_abort(n1g_state_t *s) {
     schedule_nondata_command(s, ATA_ERROR_ABORT, false, 0);
 }
 
+static void assert_soft_reset(n1g_state_t *s) {
+    cancel_transfer(s);
+    s->disk.soft_reset_asserted = true;
+    s->disk.soft_reset_pending = false;
+    s->disk.status = ATA_BSY;
+    set_ide_irq(s, false);
+}
+
+static void release_soft_reset(n1g_state_t *s) {
+    s->disk.soft_reset_asserted = false;
+    s->disk.soft_reset_pending = true;
+    s->disk.status = ATA_BSY;
+    set_ide_irq(s, false);
+}
+
+static void complete_soft_reset(n1g_state_t *s) {
+    cancel_transfer(s);
+    s->disk.soft_reset_pending = false;
+    s->disk.command = 0;
+    s->disk.error = 1;
+    s->disk.sector_count = 1;
+    s->disk.selected_lba = 1;
+    s->disk.transfer_lba = 1;
+    s->disk.device = 0;
+    s->disk.multiple_count = 0;
+    s->disk.status = ATA_DRDY | ATA_DSC;
+    build_identify(s);
+    set_ide_irq(s, false);
+}
+
 void n1g_disk_tick(n1g_state_t *s) {
+    if (s->disk.soft_reset_asserted) {
+        return;
+    }
+    if (s->disk.soft_reset_pending) {
+        complete_soft_reset(s);
+        return;
+    }
     if (s->disk.nondata_pending) {
         complete_nondata_command(s);
     }
@@ -682,8 +733,19 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
         return;
     }
     if (offset == PP_ATA_ALT_STATUS) {
+        uint8_t previous = s->disk.device_control;
         s->disk.device_control = (uint8_t)value;
-        set_ide_irq(s, s->disk.irq_pending);
+        if ((s->disk.device_control & ATA_DEVCTL_SRST) != 0) {
+            if ((previous & ATA_DEVCTL_SRST) == 0 || s->disk.soft_reset_pending) {
+                assert_soft_reset(s);
+            } else {
+                set_ide_irq(s, false);
+            }
+        } else if ((previous & ATA_DEVCTL_SRST) != 0) {
+            release_soft_reset(s);
+        } else {
+            set_ide_irq(s, s->disk.irq_pending);
+        }
         return;
     }
     if (offset == PP_IDE_DMA_CONTROL) {
@@ -708,6 +770,9 @@ void n1g_disk_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t val
         return;
     }
     if (!normalize_taskfile_offset(offset, &reg)) {
+        return;
+    }
+    if (s->disk.soft_reset_asserted || s->disk.soft_reset_pending) {
         return;
     }
 

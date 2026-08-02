@@ -83,7 +83,10 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
       IDENTIFY word 59, and ABRT READ/WRITE MULTIPLE while it is disabled.
 - [ ] Validate ATA status, DRQ, error, IRQ acknowledgement, DMA pacing, and
       multi-sector boundary behavior against firmware expectations.
-- [ ] Validate sector writes, cache/flush behavior, and transfer interruption.
+- [ ] Validate sector writes and cache/flush behavior.
+- [x] Model ATA Device Control software reset, including in-flight transfer
+      cancellation, BSY assertion/release, reset signature, and multiple-mode
+      reset.
 - [x] Make browser-launched sessions optionally persist disk changes through a
       clearly selected `--disk-out` image.
 - [x] Ensure source fixtures remain read-only by default.
