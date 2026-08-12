@@ -80,8 +80,11 @@ def main():
                 "guest PWM backlight and LCD frame",
             )
             initial_frame = request(f"{base_url}/frame.rgba", deadline, False)
+            initial_raw = request(f"{base_url}/frame.rgba?raw=1", deadline, False)
             if len(initial_frame) != 176 * 132 * 4 or rgb_nonzero(initial_frame) < 100:
                 raise RuntimeError("lit RGBA frame did not contain the guest LCD pixels")
+            if initial_raw != initial_frame:
+                raise RuntimeError("full-brightness raw and displayed frames did not match")
 
             request(f"{base_url}/hardware?main_charger=1", deadline)
             off = wait_status(
@@ -96,6 +99,9 @@ def main():
             off_frame = request(f"{base_url}/frame.rgba", deadline, False)
             if rgb_nonzero(off_frame) != 0:
                 raise RuntimeError("backlight-off RGBA frame retained illuminated pixels")
+            off_raw = request(f"{base_url}/frame.rgba?raw=1", deadline, False)
+            if off_raw != initial_raw:
+                raise RuntimeError("raw guest framebuffer changed with host backlight state")
 
             request(f"{base_url}/hardware?main_charger=0", deadline)
             wait_status(
@@ -116,7 +122,7 @@ def main():
                 process.kill()
                 process.wait(timeout=5.0)
 
-    print("web backlight: guest PWM status, frame sequencing, and RGBA intensity ok")
+    print("web backlight: guest PWM status, frame sequencing, lit RGBA, and raw RGBA ok")
 
 
 if __name__ == "__main__":

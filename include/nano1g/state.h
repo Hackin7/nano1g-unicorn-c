@@ -178,6 +178,7 @@ typedef struct n1g_memcon {
 
 typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
+    uint32_t secondary_regs[0x2000 / 4];
     bool lcd_request_armed[4];
     uint64_t lcd_transfers[4];
     uint64_t lcd_geometry_accepts;
@@ -410,6 +411,11 @@ typedef struct n1g_counters {
     uint64_t apple_ui_dispatch_hits[8];
     uint32_t apple_ui_dispatch_last[8][8];
     uint32_t apple_ui_dispatch_words[8][8];
+    uint64_t apple_preferences_hits[9];
+    uint32_t apple_preferences_last[9][8];
+    uint64_t apple_preferences_disk_writes[9];
+    uint64_t apple_power_hits[34];
+    uint32_t apple_power_last[34][8];
     uint32_t apple_handoff_pc;
     uint32_t apple_handoff_slot;
     uint32_t apple_handoff_tag;

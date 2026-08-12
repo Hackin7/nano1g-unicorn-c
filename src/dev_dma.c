@@ -6,6 +6,7 @@
 #define DMA_CH_BASE 0x1000u
 #define DMA_CH_STRIDE 0x20u
 #define DMA_CH_COUNT 4u
+#define DMA_SECONDARY_CH_COUNT 2u
 #define LCD_DMA_WAIT_REQ 0x01000000u
 #define DMA_STATUS_READY 0x04000000u
 #define LCD2_DMA_END (N1G_LCD2_BASE + 0x200u)
@@ -183,6 +184,35 @@ uint32_t n1g_dev_dma_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
         return s->dma.regs[offset / 4u];
     }
     return 0;
+}
+
+uint32_t n1g_dev_dma_secondary_read(n1g_state_t *s, uint32_t offset, uint32_t size) {
+    (void)size;
+    if (offset >= DMA_CH_BASE &&
+        offset < DMA_CH_BASE + DMA_SECONDARY_CH_COUNT * DMA_CH_STRIDE &&
+        (offset % DMA_CH_STRIDE) == 0x04u) {
+        return s->dma.secondary_regs[offset / 4u] | DMA_STATUS_READY;
+    }
+    if (offset < sizeof(s->dma.secondary_regs)) {
+        return s->dma.secondary_regs[offset / 4u];
+    }
+    return 0;
+}
+
+void n1g_dev_dma_secondary_write(n1g_state_t *s, uint32_t offset, uint32_t size,
+                                 uint32_t value) {
+    (void)size;
+    if (offset < sizeof(s->dma.secondary_regs)) {
+        s->dma.secondary_regs[offset / 4u] = value;
+        if (s->opts.verbose && (offset < 0x10u || offset >= DMA_CH_BASE)) {
+            static uint32_t secondary_dma_logs;
+            if (secondary_dma_logs < 32u) {
+                secondary_dma_logs++;
+                n1g_log(s, "secondary dma reg write offset=0x%04x size=%u value=0x%08x",
+                        offset, size, value);
+            }
+        }
+    }
 }
 
 static void dma_try_lcd_transfer(n1g_state_t *s, uint32_t channel) {

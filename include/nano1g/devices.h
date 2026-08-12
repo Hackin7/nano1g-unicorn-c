@@ -36,6 +36,8 @@ void n1g_dev_memcon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32
 
 uint32_t n1g_dev_dma_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_dma_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+uint32_t n1g_dev_dma_secondary_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_dma_secondary_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 void n1g_dev_dma_tick(n1g_state_t *s);
 
 uint32_t n1g_dev_gpio_read(n1g_state_t *s, uint32_t offset, uint32_t size);

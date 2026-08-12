@@ -7,7 +7,9 @@
 #include <string.h>
 
 #define DMA_CH_BASE 0x1000u
+#define DMA_CH_STRIDE 0x20u
 #define DMA_CMD_WAIT_REQ (1u << 24)
+#define DMA_STATUS_READY (1u << 26)
 #define DMA_STATUS_INTR (1u << 30)
 #define APPLE_DMA_IRQ_BIT (1u << 26)
 #define APPLE_DMA_MANAGER_PTR 0x10705ba0u
@@ -37,6 +39,24 @@ int main(void) {
     memset(&s, 0, sizeof(s));
     s.opts.profile = N1G_PROFILE_APPLE;
 
+    n1g_dev_dma_secondary_write(&s, 0x00u, 4, 0x80000000u);
+    n1g_dev_dma_secondary_write(&s, DMA_CH_BASE, 4, 0x81234567u);
+    n1g_dev_dma_write(&s, 0x00u, 4, 0x00000001u);
+    int failed =
+        expect_true(n1g_dev_dma_secondary_read(&s, 0x00u, 4) == 0x80000000u,
+                    "secondary DMA master register did not latch") ||
+        expect_true(n1g_dev_dma_secondary_read(&s, DMA_CH_BASE, 4) == 0x81234567u,
+                    "secondary DMA channel command did not latch") ||
+        expect_true((n1g_dev_dma_secondary_read(&s, DMA_CH_BASE + 0x04u, 4) &
+                     DMA_STATUS_READY) != 0u,
+                    "secondary DMA channel 0 did not report ready") ||
+        expect_true((n1g_dev_dma_secondary_read(&s,
+                     DMA_CH_BASE + DMA_CH_STRIDE + 0x04u, 4) &
+                     DMA_STATUS_READY) != 0u,
+                    "secondary DMA channel 1 did not report ready") ||
+        expect_true(n1g_dev_dma_read(&s, 0x00u, 4) == 0x00000001u,
+                    "primary and secondary DMA master registers aliased");
+
     if (!n1g_ram_init(&s)) {
         fprintf(stderr, "failed to allocate RAM\n");
         return 1;
@@ -62,8 +82,8 @@ int main(void) {
     n1g_dev_dma_write(&s, DMA_CH_BASE, 4,
                       DMA_CMD_WAIT_REQ | (16u - 4u));
     n1g_dev_dma_tick(&s);
-    int failed = expect_true(s.counters.lcd_words == 0u,
-                             "Apple LCD DMA ran before an LCD2 block request");
+    failed = failed || expect_true(s.counters.lcd_words == 0u,
+                                   "Apple LCD DMA ran before an LCD2 block request");
 
     n1g_dev_lcd2_write(&s, 0x24u, 4, 0xc0010000u | (16u - 1u));
     n1g_dev_lcd2_write(&s, 0x20u, 4, 0x35000080u);

@@ -44,7 +44,7 @@ if(NOT result EQUAL 0)
   message(FATAL_ERROR "web backlight smoke failed: ${result}\n${stdout}\n${stderr}")
 endif()
 
-string(FIND "${stdout}" "guest PWM status, frame sequencing, and RGBA intensity ok" backlight_pos)
+string(FIND "${stdout}" "guest PWM status, frame sequencing, lit RGBA, and raw RGBA ok" backlight_pos)
 if(backlight_pos EQUAL -1)
   message(FATAL_ERROR "web backlight smoke missed its completion marker:\n${stdout}\n${stderr}")
 endif()

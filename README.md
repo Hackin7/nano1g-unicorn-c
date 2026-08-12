@@ -275,6 +275,10 @@ Implemented foundation:
   Language, main-menu, and Extras settled frames from one execution. A separate
   750-million-instruction stress gate repeats Extras scrolling, Menu exits, and
   native re-entry three times without resetting accumulated hardware state.
+- Apple's second DMA register bank at `0x60008000..0x60009fff` is routed with
+  independent master state and two ready service channels, matching the native
+  firmware's controller construction and startup reset sequence. Its eventual
+  transfer targets remain deliberately unmodeled until traces identify them.
 - Headless LCD PPM output.
 - Local browser frontend via `--web PORT`, backed by the same native LCD
   framebuffer that PPM output uses, with live Rockbox input controls and audio

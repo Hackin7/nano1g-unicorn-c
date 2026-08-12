@@ -193,6 +193,10 @@ can enter, use, and leave its expected USB modes without register stubs.
       workloads.
 - [ ] Improve interrupt priority, masking, forced-interrupt, and acknowledgement
       semantics where traces disagree with hardware.
+- [x] Route Apple's second DMA master at `0x60008000` and preserve independent
+      master/channel state for its two firmware-constructed service channels.
+- [ ] Identify the peripheral request lines and transfer targets used by the
+      secondary DMA controller before enabling data movement.
 - [ ] Expand DMA channel lifecycle, request pacing, chaining, and completion
       behavior beyond the currently tested LCD and audio paths.
 - [ ] Validate cache-control and self-modifying-code behavior across more native

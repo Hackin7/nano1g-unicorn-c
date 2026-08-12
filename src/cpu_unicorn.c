@@ -278,6 +278,116 @@ static void record_apple_lcd_producer_probe(uc_engine *uc, n1g_state_t *s, uint3
     uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_lcd_producer_last[slot][7]);
 }
 
+static void record_apple_preferences_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_preferences_hits) /
+                    sizeof(s->counters.apple_preferences_hits[0])) {
+        return;
+    }
+
+    uint32_t r0 = 0;
+    uint32_t r6 = 0;
+    s->counters.apple_preferences_hits[slot]++;
+    uc_reg_read(uc, UC_ARM_REG_R0, &r0);
+    uc_reg_read(uc, UC_ARM_REG_R1, &s->counters.apple_preferences_last[slot][1]);
+    uc_reg_read(uc, UC_ARM_REG_R2, &s->counters.apple_preferences_last[slot][2]);
+    uc_reg_read(uc, UC_ARM_REG_R3, &s->counters.apple_preferences_last[slot][3]);
+    uc_reg_read(uc, UC_ARM_REG_R4, &s->counters.apple_preferences_last[slot][4]);
+    uc_reg_read(uc, UC_ARM_REG_R6, &r6);
+    uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_preferences_last[slot][6]);
+    s->counters.apple_preferences_last[slot][0] = r0;
+    s->counters.apple_preferences_last[slot][5] = r6;
+    uint32_t manager = slot <= 3u ? r0 : (slot <= 7u ? r6 : 0u);
+    s->counters.apple_preferences_last[slot][7] =
+        manager ? (ram_read32_or_zero(s, manager + 0xb6cu) & 0xffu) : 0u;
+    s->counters.apple_preferences_disk_writes[slot] = s->counters.disk_writes;
+}
+
+static void record_apple_power_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    if (slot >= sizeof(s->counters.apple_power_hits) /
+                    sizeof(s->counters.apple_power_hits[0])) {
+        return;
+    }
+
+    uint32_t r1 = 0;
+    s->counters.apple_power_hits[slot]++;
+    uc_reg_read(uc, UC_ARM_REG_R0, &s->counters.apple_power_last[slot][0]);
+    uc_reg_read(uc, UC_ARM_REG_R1, &r1);
+    uc_reg_read(uc, UC_ARM_REG_R2, &s->counters.apple_power_last[slot][2]);
+    uc_reg_read(uc, UC_ARM_REG_R3, &s->counters.apple_power_last[slot][3]);
+    uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_power_last[slot][7]);
+    s->counters.apple_power_last[slot][1] = r1;
+    s->counters.apple_power_last[slot][4] = ram_read32_or_zero(s, r1 + 4u);
+    s->counters.apple_power_last[slot][5] = ram_read32_or_zero(s, r1);
+    s->counters.apple_power_last[slot][6] = ram_read32_or_zero(s, r1 + 8u);
+
+    if (slot == 16u) {
+        uint32_t power_state = ram_read32_or_zero(s, s->counters.apple_power_last[slot][0] + 24u);
+        s->counters.apple_power_last[slot][4] = power_state;
+        s->counters.apple_power_last[slot][5] = ram_read32_or_zero(s, power_state + 1076u);
+    } else if (slot == 21u) {
+        uint32_t state = s->counters.apple_power_last[slot][0];
+        s->counters.apple_power_last[slot][4] = ram_read32_or_zero(s, state);
+        s->counters.apple_power_last[slot][5] = ram_read32_or_zero(s, state + 4u);
+    } else if (slot == 22u) {
+        uint32_t state = 0;
+        uc_reg_read(uc, UC_ARM_REG_R6, &state);
+        s->counters.apple_power_last[slot][4] = state;
+        s->counters.apple_power_last[slot][5] = ram_read32_or_zero(s, state);
+        s->counters.apple_power_last[slot][6] = ram_read32_or_zero(s, state + 4u);
+    }
+}
+
+static void record_apple_gate_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    uint32_t id = 0;
+    uint32_t value = 0;
+    uint32_t sp = 0;
+
+    if (slot >= sizeof(s->counters.apple_power_hits) /
+                    sizeof(s->counters.apple_power_hits[0])) {
+        return;
+    }
+    if (slot == 27u) {
+        uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+        id = ram_read32_or_zero(s, sp + 0x18u);
+        value = ram_read32_or_zero(s, sp + 0x20u);
+    } else {
+        uc_reg_read(uc, UC_ARM_REG_R0, &id);
+        uc_reg_read(uc, UC_ARM_REG_R1, &value);
+    }
+    if (id != 3u) {
+        return;
+    }
+
+    s->counters.apple_power_hits[slot]++;
+    s->counters.apple_power_last[slot][0] = id;
+    s->counters.apple_power_last[slot][1] = value;
+    uc_reg_read(uc, UC_ARM_REG_LR, &s->counters.apple_power_last[slot][7]);
+}
+
+static void record_apple_pwrp_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
+    uint32_t regs[7] = {0};
+
+    if (slot >= sizeof(s->counters.apple_power_hits) /
+                    sizeof(s->counters.apple_power_hits[0])) {
+        return;
+    }
+    uc_reg_read(uc, UC_ARM_REG_R0, &regs[0]);
+    uc_reg_read(uc, UC_ARM_REG_R1, &regs[1]);
+    uc_reg_read(uc, UC_ARM_REG_R4, &regs[2]);
+    uc_reg_read(uc, UC_ARM_REG_R6, &regs[3]);
+    uc_reg_read(uc, UC_ARM_REG_R8, &regs[4]);
+    uc_reg_read(uc, UC_ARM_REG_R12, &regs[5]);
+    uc_reg_read(uc, UC_ARM_REG_LR, &regs[6]);
+    uint32_t tag = slot <= 31u ? regs[1] : (slot == 32u ? regs[4] : regs[0]);
+    if (tag != 0x70727770u) {
+        return;
+    }
+
+    s->counters.apple_power_hits[slot]++;
+    memcpy(s->counters.apple_power_last[slot], regs, 6u * sizeof(regs[0]));
+    s->counters.apple_power_last[slot][7] = regs[6];
+}
+
 static void record_apple_input_probe(uc_engine *uc, n1g_state_t *s, uint32_t slot) {
     if (slot >= sizeof(s->counters.apple_input_hits) / sizeof(s->counters.apple_input_hits[0])) {
         return;
@@ -901,6 +1011,135 @@ static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user
     apple_track_progress(s, address);
 
     switch ((uint32_t)address) {
+    case 0x0012bcacu:
+        record_apple_power_probe(uc, s, 0);
+        break;
+    case 0x001159ccu:
+        record_apple_power_probe(uc, s, 1);
+        break;
+    case 0x00115870u:
+        record_apple_power_probe(uc, s, 2);
+        break;
+    case 0x0012c034u:
+        record_apple_power_probe(uc, s, 3);
+        break;
+    case 0x0012c2b8u:
+        record_apple_power_probe(uc, s, 4);
+        break;
+    case 0x0012c34cu:
+        record_apple_power_probe(uc, s, 5);
+        break;
+    case 0x0012c5dcu:
+        record_apple_power_probe(uc, s, 6);
+        break;
+    case 0x0012c94cu:
+        record_apple_power_probe(uc, s, 7);
+        break;
+    case 0x00143da4u:
+        record_apple_power_probe(uc, s, 8);
+        break;
+    case 0x0002e3c8u:
+        record_apple_power_probe(uc, s, 9);
+        break;
+    case 0x00079fe4u:
+        record_apple_power_probe(uc, s, 10);
+        break;
+    case 0x0012bf7cu: /* arm the display-inactivity timer at manager + 0x1c */
+        record_apple_power_probe(uc, s, 11);
+        break;
+    case 0x0012c6e8u: /* manager + 0x1c timer callback */
+        record_apple_power_probe(uc, s, 12);
+        break;
+    case 0x0012c718u: /* generic power-manager timer dispatcher */
+        record_apple_power_probe(uc, s, 13);
+        break;
+    case 0x0012c730u: /* dispatcher selected manager + 0x1c */
+        record_apple_power_probe(uc, s, 14);
+        break;
+    case 0x0012c8f4u: /* transition-7 power callback */
+        record_apple_power_probe(uc, s, 15);
+        break;
+    case 0x0012c1bcu: /* display-timeout predicate entry */
+        record_apple_power_probe(uc, s, 16);
+        break;
+    case 0x0012c1d8u: /* media/activity-state predicate result */
+        record_apple_power_probe(uc, s, 17);
+        break;
+    case 0x0012c1e8u: /* global power-state predicate byte */
+        record_apple_power_probe(uc, s, 18);
+        break;
+    case 0x0012c1f0u: /* predicate false: rearm */
+        record_apple_power_probe(uc, s, 19);
+        break;
+    case 0x0012c1f8u: /* predicate true: type-6 transition */
+        record_apple_power_probe(uc, s, 20);
+        break;
+    case 0x00115928u: /* gesture state-machine dispatch entry */
+        record_apple_power_probe(uc, s, 21);
+        break;
+    case 0x00115944u: /* gesture state-machine action result */
+        record_apple_power_probe(uc, s, 22);
+        break;
+    case 0x00143db4u: /* UI shutdown Preferences object guard */
+        record_apple_power_probe(uc, s, 23);
+        break;
+    case 0x00143ddcu: /* UI shutdown firmware-lock result */
+        record_apple_power_probe(uc, s, 24);
+        break;
+    case 0x00143de8u: /* UI shutdown Preferences checker call */
+        record_apple_power_probe(uc, s, 25);
+        break;
+    case 0x0001baecu: /* event-3 acquire/query entry */
+        record_apple_gate_probe(uc, s, 26);
+        break;
+    case 0x0001bb44u: /* event-3 acquire/query response */
+        record_apple_gate_probe(uc, s, 27);
+        break;
+    case 0x0001bc4cu: /* event-3 release */
+        record_apple_gate_probe(uc, s, 28);
+        break;
+    case 0x0001bd24u: /* event-3 initialization */
+        record_apple_gate_probe(uc, s, 29);
+        break;
+    case 0x0002e408u: /* exact pwrp notification post */
+        record_apple_pwrp_probe(uc, s, 30);
+        break;
+    case 0x000349b8u: /* pwrp broadcaster entry */
+        record_apple_pwrp_probe(uc, s, 31);
+        break;
+    case 0x000349f0u: /* pwrp subscriber-count branch */
+        record_apple_pwrp_probe(uc, s, 32);
+        break;
+    case 0x00034a68u: /* pwrp indirect callback */
+        record_apple_pwrp_probe(uc, s, 33);
+        break;
+    case 0x0002d408u:
+        record_apple_preferences_probe(uc, s, 0);
+        break;
+    case 0x0003b604u:
+        record_apple_preferences_probe(uc, s, 1);
+        break;
+    case 0x0003b4dcu:
+        record_apple_preferences_probe(uc, s, 2);
+        break;
+    case 0x0003b4ecu:
+        record_apple_preferences_probe(uc, s, 3);
+        break;
+    case 0x0003b598u:
+        record_apple_preferences_probe(uc, s, 4);
+        break;
+    case 0x0003b5bcu:
+        record_apple_preferences_probe(uc, s, 5);
+        break;
+    case 0x0003b5c0u:
+        record_apple_preferences_probe(uc, s, 6);
+        break;
+    case 0x0003b5c4u:
+        record_apple_preferences_probe(uc, s, 7);
+        break;
+    case 0x0003b77cu:
+        record_apple_preferences_probe(uc, s, 8);
+        break;
     case 0x00053b20u:
         record_apple_lcd_path_probe(uc, s, 0);
         break;
@@ -2193,6 +2432,45 @@ static bool add_apple_progress_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x0000c9f4u, 0x0000c9f8u) &&
            add_code_hook(s, uc, 0x00024c48u, 0x00024c4cu) &&
            add_code_hook(s, uc, 0x00025024u, 0x00025028u) &&
+           add_code_hook(s, uc, 0x0002d408u, 0x0002d40cu) &&
+           add_code_hook(s, uc, 0x0003b4dcu, 0x0003b4f0u) &&
+           add_code_hook(s, uc, 0x0003b598u, 0x0003b5c8u) &&
+           add_code_hook(s, uc, 0x0003b604u, 0x0003b608u) &&
+           add_code_hook(s, uc, 0x0003b77cu, 0x0003b780u) &&
+           add_code_hook(s, uc, 0x0002e3c8u, 0x0002e3ccu) &&
+           add_code_hook(s, uc, 0x00079fe4u, 0x00079fe8u) &&
+           add_code_hook(s, uc, 0x00115870u, 0x00115874u) &&
+           add_code_hook(s, uc, 0x00115928u, 0x0011592cu) &&
+           add_code_hook(s, uc, 0x00115944u, 0x00115948u) &&
+           add_code_hook(s, uc, 0x001159ccu, 0x001159d0u) &&
+           add_code_hook(s, uc, 0x0012bcacu, 0x0012bcb0u) &&
+           add_code_hook(s, uc, 0x0012c034u, 0x0012c038u) &&
+           add_code_hook(s, uc, 0x0012c2b8u, 0x0012c2bcu) &&
+           add_code_hook(s, uc, 0x0012c34cu, 0x0012c350u) &&
+           add_code_hook(s, uc, 0x0012c5dcu, 0x0012c5e0u) &&
+           add_code_hook(s, uc, 0x0012bf7cu, 0x0012bf80u) &&
+           add_code_hook(s, uc, 0x0012c1bcu, 0x0012c1c0u) &&
+           add_code_hook(s, uc, 0x0012c1d8u, 0x0012c1dcu) &&
+           add_code_hook(s, uc, 0x0012c1e8u, 0x0012c1ecu) &&
+           add_code_hook(s, uc, 0x0012c1f0u, 0x0012c1f4u) &&
+           add_code_hook(s, uc, 0x0012c1f8u, 0x0012c1fcu) &&
+           add_code_hook(s, uc, 0x0012c6e8u, 0x0012c6ecu) &&
+           add_code_hook(s, uc, 0x0012c718u, 0x0012c71cu) &&
+           add_code_hook(s, uc, 0x0012c730u, 0x0012c734u) &&
+           add_code_hook(s, uc, 0x0012c8f4u, 0x0012c8f8u) &&
+           add_code_hook(s, uc, 0x0012c94cu, 0x0012c950u) &&
+           add_code_hook(s, uc, 0x00143da4u, 0x00143da8u) &&
+           add_code_hook(s, uc, 0x00143db4u, 0x00143db8u) &&
+           add_code_hook(s, uc, 0x00143ddcu, 0x00143de0u) &&
+           add_code_hook(s, uc, 0x00143de8u, 0x00143decu) &&
+           add_code_hook(s, uc, 0x0001baecu, 0x0001baf0u) &&
+           add_code_hook(s, uc, 0x0001bb44u, 0x0001bb48u) &&
+           add_code_hook(s, uc, 0x0001bc4cu, 0x0001bc50u) &&
+           add_code_hook(s, uc, 0x0001bd24u, 0x0001bd28u) &&
+           add_code_hook(s, uc, 0x0002e408u, 0x0002e40cu) &&
+           add_code_hook(s, uc, 0x000349b8u, 0x000349bcu) &&
+           add_code_hook(s, uc, 0x000349f0u, 0x000349f4u) &&
+           add_code_hook(s, uc, 0x00034a68u, 0x00034a6cu) &&
            add_code_hook(s, uc, 0x00025398u, 0x000253a8u) &&
            add_code_hook(s, uc, 0x0002a8b0u, 0x0002a948u) &&
            add_code_hook(s, uc, 0x00032840u, 0x00032844u) &&
@@ -2256,6 +2534,45 @@ static bool add_apple_verbose_hooks(n1g_state_t *s, uc_engine *uc) {
            add_code_hook(s, uc, 0x00001388u, 0x000013b8u) &&
            add_code_hook(s, uc, 0x00024d00u, 0x00024effu) &&
            add_code_hook(s, uc, 0x00024c40u, 0x00025030u) &&
+           add_code_hook(s, uc, 0x0002d408u, 0x0002d40cu) &&
+           add_code_hook(s, uc, 0x0003b4dcu, 0x0003b4f0u) &&
+           add_code_hook(s, uc, 0x0003b598u, 0x0003b5c8u) &&
+           add_code_hook(s, uc, 0x0003b604u, 0x0003b608u) &&
+           add_code_hook(s, uc, 0x0003b77cu, 0x0003b780u) &&
+           add_code_hook(s, uc, 0x0002e3c8u, 0x0002e3ccu) &&
+           add_code_hook(s, uc, 0x00079fe4u, 0x00079fe8u) &&
+           add_code_hook(s, uc, 0x00115870u, 0x00115874u) &&
+           add_code_hook(s, uc, 0x00115928u, 0x0011592cu) &&
+           add_code_hook(s, uc, 0x00115944u, 0x00115948u) &&
+           add_code_hook(s, uc, 0x001159ccu, 0x001159d0u) &&
+           add_code_hook(s, uc, 0x0012bcacu, 0x0012bcb0u) &&
+           add_code_hook(s, uc, 0x0012c034u, 0x0012c038u) &&
+           add_code_hook(s, uc, 0x0012c2b8u, 0x0012c2bcu) &&
+           add_code_hook(s, uc, 0x0012c34cu, 0x0012c350u) &&
+           add_code_hook(s, uc, 0x0012c5dcu, 0x0012c5e0u) &&
+           add_code_hook(s, uc, 0x0012bf7cu, 0x0012bf80u) &&
+           add_code_hook(s, uc, 0x0012c1bcu, 0x0012c1c0u) &&
+           add_code_hook(s, uc, 0x0012c1d8u, 0x0012c1dcu) &&
+           add_code_hook(s, uc, 0x0012c1e8u, 0x0012c1ecu) &&
+           add_code_hook(s, uc, 0x0012c1f0u, 0x0012c1f4u) &&
+           add_code_hook(s, uc, 0x0012c1f8u, 0x0012c1fcu) &&
+           add_code_hook(s, uc, 0x0012c6e8u, 0x0012c6ecu) &&
+           add_code_hook(s, uc, 0x0012c718u, 0x0012c71cu) &&
+           add_code_hook(s, uc, 0x0012c730u, 0x0012c734u) &&
+           add_code_hook(s, uc, 0x0012c8f4u, 0x0012c8f8u) &&
+           add_code_hook(s, uc, 0x0012c94cu, 0x0012c950u) &&
+           add_code_hook(s, uc, 0x00143da4u, 0x00143da8u) &&
+           add_code_hook(s, uc, 0x00143db4u, 0x00143db8u) &&
+           add_code_hook(s, uc, 0x00143ddcu, 0x00143de0u) &&
+           add_code_hook(s, uc, 0x00143de8u, 0x00143decu) &&
+           add_code_hook(s, uc, 0x0001baecu, 0x0001baf0u) &&
+           add_code_hook(s, uc, 0x0001bb44u, 0x0001bb48u) &&
+           add_code_hook(s, uc, 0x0001bc4cu, 0x0001bc50u) &&
+           add_code_hook(s, uc, 0x0001bd24u, 0x0001bd28u) &&
+           add_code_hook(s, uc, 0x0002e408u, 0x0002e40cu) &&
+           add_code_hook(s, uc, 0x000349b8u, 0x000349bcu) &&
+           add_code_hook(s, uc, 0x000349f0u, 0x000349f4u) &&
+           add_code_hook(s, uc, 0x00034a68u, 0x00034a6cu) &&
            add_code_hook(s, uc, 0x00025398u, 0x000253a8u) &&
            add_code_hook(s, uc, 0x0002a058u, 0x0002a05cu) &&
            add_code_hook(s, uc, 0x0002a8b0u, 0x0002a948u) &&

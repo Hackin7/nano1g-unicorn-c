@@ -288,7 +288,7 @@ static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len) {
     return bmp;
 }
 
-static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len) {
+static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len, bool apply_lighting) {
     const uint32_t pixels = N1G_LCD_W * N1G_LCD_H;
     uint8_t *rgba = (uint8_t *)malloc(pixels * 4u);
     if (!rgba) {
@@ -298,7 +298,9 @@ static uint8_t *make_rgba(n1g_state_t *s, size_t *out_len) {
     for (uint32_t i = 0; i < pixels; i++) {
         uint8_t r = 0, g = 0, b = 0;
         rgb565(s->lcd2.pixels[i], &r, &g, &b);
-        apply_backlight(s, &r, &g, &b);
+        if (apply_lighting) {
+            apply_backlight(s, &r, &g, &b);
+        }
         rgba[i * 4u + 0u] = r;
         rgba[i * 4u + 1u] = g;
         rgba[i * 4u + 2u] = b;
@@ -334,7 +336,7 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
-                     "\"device_ticks\":%llu,\"lcd_words\":%llu,\"lcd_gram\":%llu,"
+                     "\"device_ticks\":%llu,\"rtc_usec_per_tick\":%u,\"lcd_words\":%llu,\"lcd_gram\":%llu,"
                      "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
                      "\"dma_lcd_transfers\":%llu,\"lcd_dma_accepts\":%llu,"
                      "\"lcd_dma_mismatches\":%llu,\"lcd_dma_descriptor_pixels\":%llu,"
@@ -361,12 +363,21 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"apple_work_pool\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu head=0x%08x words=0x%08x,0x%08x,0x%08x,0x%08x branch_obj=0x%08x stale_r1=0x%08x sub=0x%08x handler=0x%08x lr=0x%08x\","
                      "\"apple_ui_branch\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu obj=0x%08x objw=0x%08x,0x%08x,0x%08x,0x%08x dispatch=0x%08x/0x%08x select=0x%08x/0x%08x accept=0x%08x/0x%08x\","
                      "\"apple_ui_dispatch\":\"h=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu obj=0x%08x objw=0x%08x,0x%08x,0x%08x,0x%08x vt=0x%08x,0x%08x,0x%08x,0x%08x objtab=0x%08x/0x%08x lr=0x%08x\","
+                     "\"apple_preferences_hits\":[%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu],"
+                     "\"apple_power_hits\":[%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu],"
+                     "\"apple_shutdown_guard\":[%u,%u,%u],"
+                     "\"apple_shutdown_gate\":[%u,%u,%u],"
+                     "\"apple_pwrp\":[%u,%u,%u,%u,%u],"
+                     "\"apple_power_event_types\":[%u,%u,%u],"
+                     "\"apple_power_timer\":[%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u],"
+                     "\"apple_power_state\":[%u,%u,%u,%u,%u,%u],"
                      "\"label\":\"%s\",\"preset\":\"%s\","
                      "\"cpu_pc\":\"0x%08x\"}\n",
                      running ? "true" : "false",
                      (unsigned long long)web->frame_seq,
                      (unsigned long long)s->counters.guest_insns,
                      (unsigned long long)s->counters.device_ticks,
+                     s->opts.rtc_usec_per_tick,
                      (unsigned long long)s->counters.lcd_words,
                      (unsigned long long)s->lcd2.gram_pixels,
                      (unsigned long long)s->lcd2.block_pixels,
@@ -548,6 +559,80 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      s->counters.apple_ui_dispatch_last[3][0],
                      s->counters.apple_ui_dispatch_last[3][1],
                      s->counters.apple_ui_dispatch_last[3][7],
+                     (unsigned long long)s->counters.apple_preferences_hits[0],
+                     (unsigned long long)s->counters.apple_preferences_hits[1],
+                     (unsigned long long)s->counters.apple_preferences_hits[2],
+                     (unsigned long long)s->counters.apple_preferences_hits[3],
+                     (unsigned long long)s->counters.apple_preferences_hits[4],
+                     (unsigned long long)s->counters.apple_preferences_hits[5],
+                     (unsigned long long)s->counters.apple_preferences_hits[6],
+                     (unsigned long long)s->counters.apple_preferences_hits[7],
+                     (unsigned long long)s->counters.apple_preferences_hits[8],
+                     (unsigned long long)s->counters.apple_power_hits[0],
+                     (unsigned long long)s->counters.apple_power_hits[1],
+                     (unsigned long long)s->counters.apple_power_hits[2],
+                     (unsigned long long)s->counters.apple_power_hits[3],
+                     (unsigned long long)s->counters.apple_power_hits[4],
+                     (unsigned long long)s->counters.apple_power_hits[5],
+                     (unsigned long long)s->counters.apple_power_hits[6],
+                     (unsigned long long)s->counters.apple_power_hits[7],
+                     (unsigned long long)s->counters.apple_power_hits[8],
+                     (unsigned long long)s->counters.apple_power_hits[9],
+                     (unsigned long long)s->counters.apple_power_hits[10],
+                     (unsigned long long)s->counters.apple_power_hits[11],
+                     (unsigned long long)s->counters.apple_power_hits[12],
+                     (unsigned long long)s->counters.apple_power_hits[13],
+                     (unsigned long long)s->counters.apple_power_hits[14],
+                     (unsigned long long)s->counters.apple_power_hits[15],
+                     (unsigned long long)s->counters.apple_power_hits[16],
+                     (unsigned long long)s->counters.apple_power_hits[17],
+                     (unsigned long long)s->counters.apple_power_hits[18],
+                     (unsigned long long)s->counters.apple_power_hits[19],
+                     (unsigned long long)s->counters.apple_power_hits[20],
+                     (unsigned long long)s->counters.apple_power_hits[21],
+                     (unsigned long long)s->counters.apple_power_hits[22],
+                     (unsigned long long)s->counters.apple_power_hits[23],
+                     (unsigned long long)s->counters.apple_power_hits[24],
+                     (unsigned long long)s->counters.apple_power_hits[25],
+                     (unsigned long long)s->counters.apple_power_hits[26],
+                     (unsigned long long)s->counters.apple_power_hits[27],
+                     (unsigned long long)s->counters.apple_power_hits[28],
+                     (unsigned long long)s->counters.apple_power_hits[29],
+                     (unsigned long long)s->counters.apple_power_hits[30],
+                     (unsigned long long)s->counters.apple_power_hits[31],
+                     (unsigned long long)s->counters.apple_power_hits[32],
+                     (unsigned long long)s->counters.apple_power_hits[33],
+                     s->counters.apple_power_last[23][0],
+                     s->counters.apple_power_last[24][0],
+                     s->counters.apple_power_last[25][0],
+                     s->counters.apple_power_last[27][1],
+                     s->counters.apple_power_last[28][1],
+                     s->counters.apple_power_last[29][1],
+                     s->counters.apple_power_last[30][0],
+                     s->counters.apple_power_last[31][0],
+                     s->counters.apple_power_last[32][2],
+                     s->counters.apple_power_last[32][3],
+                     s->counters.apple_power_last[33][5],
+                     s->counters.apple_power_last[0][4],
+                     s->counters.apple_power_last[1][4],
+                     s->counters.apple_power_last[2][4],
+                     s->counters.apple_power_last[11][0],
+                     s->counters.apple_power_last[11][1],
+                     s->counters.apple_power_last[12][0],
+                     s->counters.apple_power_last[13][0],
+                     s->counters.apple_power_last[13][1],
+                     s->counters.apple_power_last[13][6],
+                     s->counters.apple_power_last[14][0],
+                     s->counters.apple_power_last[16][4],
+                     s->counters.apple_power_last[16][5],
+                     s->counters.apple_power_last[17][0],
+                     s->counters.apple_power_last[18][0],
+                     s->counters.apple_power_last[21][2],
+                     s->counters.apple_power_last[21][4],
+                     s->counters.apple_power_last[21][5],
+                     s->counters.apple_power_last[22][0],
+                     s->counters.apple_power_last[22][5],
+                     s->counters.apple_power_last[22][6],
                      label,
                      preset,
                      n1g_cpu_pc(s, N1G_CORE_CPU));
@@ -719,6 +804,7 @@ static bool send_hardware(n1g_state_t *s, intptr_t fd, const char *query) {
     uint32_t main_charger = s->opts.main_charger_connected ? 1u : 0u;
     uint32_t usb_charger = s->opts.usb_charger_connected ? 1u : 0u;
     uint32_t hold = s->opts.hold_switch_engaged ? 1u : 0u;
+    uint32_t rtc_usec_per_tick = s->opts.rtc_usec_per_tick;
     bool touched = false;
     bool valid = true;
 
@@ -738,23 +824,30 @@ static bool send_hardware(n1g_state_t *s, intptr_t fd, const char *query) {
         touched = true;
         valid = query_u32(query, "hold", &hold) && hold <= 1u;
     }
+    if (valid && query_has(query, "rtc_usec_per_tick=")) {
+        touched = true;
+        valid = query_u32(query, "rtc_usec_per_tick", &rtc_usec_per_tick) &&
+                rtc_usec_per_tick >= 1u && rtc_usec_per_tick <= 4096u;
+    }
     if (!touched || !valid) {
         const char msg[] = "{\"ok\":false}\n";
         return send_response(fd, "400 Bad Request", "application/json", msg, sizeof(msg) - 1u);
     }
 
     s->opts.battery_percent = battery;
+    s->opts.rtc_usec_per_tick = rtc_usec_per_tick;
     (void)n1g_dev_gpio_set_chargers(s, main_charger != 0u, usb_charger != 0u);
     (void)n1g_dev_gpio_set_hold(s, hold != 0u);
 
-    char body[160];
+    char body[192];
     int n = snprintf(body,
                      sizeof(body),
-                     "{\"ok\":true,\"battery_percent\":%u,\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s}\n",
+                     "{\"ok\":true,\"battery_percent\":%u,\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,\"rtc_usec_per_tick\":%u}\n",
                      s->opts.battery_percent,
                      s->opts.main_charger_connected ? "true" : "false",
                      s->opts.usb_charger_connected ? "true" : "false",
-                     s->opts.hold_switch_engaged ? "true" : "false");
+                     s->opts.hold_switch_engaged ? "true" : "false",
+                     s->opts.rtc_usec_per_tick);
     if (n <= 0 || (size_t)n >= sizeof(body)) {
         return false;
     }
@@ -840,7 +933,7 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         (void)send_audio_pcm(s, fd, query ? query : "");
     } else if (strcmp(path, "/frame.rgba") == 0) {
         size_t len = 0;
-        uint8_t *rgba = make_rgba(s, &len);
+        uint8_t *rgba = make_rgba(s, &len, !query_has(query, "raw=1"));
         if (!rgba) {
             const char msg[] = "out of memory\n";
             (void)send_response(fd, "500 Internal Server Error", "text/plain", msg, sizeof(msg) - 1u);

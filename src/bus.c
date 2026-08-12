@@ -41,6 +41,7 @@ static const char *host_profile_mmio_device(uint32_t addr) {
     if (addr >= N1G_TIMER_BASE && addr <= N1G_TIMER_BASE + 0x17) return "timer";
     if (addr >= N1G_DEVCON_BASE && addr <= N1G_DEVCON_BASE + 0xfff) return "devcon";
     if (addr >= N1G_CPUCON_BASE && addr <= N1G_CPUCON_BASE + 0xfff) return "cpucon";
+    if (addr >= N1G_DMA_SECONDARY_BASE && addr <= N1G_DMA_SECONDARY_BASE + 0x1fff) return "dma_secondary";
     if (addr >= N1G_DMA_BASE && addr <= N1G_DMA_BASE + 0x1fff) return "dma";
     if (addr >= N1G_GPIO_BASE && addr <= N1G_GPIO_BASE + 0x9ff) return "gpio";
     if (addr >= N1G_CACHECON_BASE && addr <= N1G_CACHECON_BASE + 0xfff) return "cachecon";
@@ -171,6 +172,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_CPUCON_BASE && addr <= N1G_CPUCON_BASE + 0xfff) {
         return n1g_dev_cpucon_read(s, addr - N1G_CPUCON_BASE, size);
     }
+    if (addr >= N1G_DMA_SECONDARY_BASE && addr <= N1G_DMA_SECONDARY_BASE + 0x1fff) {
+        return n1g_dev_dma_secondary_read(s, addr - N1G_DMA_SECONDARY_BASE, size);
+    }
     if (addr >= N1G_DMA_BASE && addr <= N1G_DMA_BASE + 0x1fff) {
         return n1g_dev_dma_read(s, addr - N1G_DMA_BASE, size);
     }
@@ -243,6 +247,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_devcon_write(s, addr - N1G_DEVCON_BASE, size, value);
     } else if (addr >= N1G_CPUCON_BASE && addr <= N1G_CPUCON_BASE + 0xfff) {
         n1g_dev_cpucon_write(s, addr - N1G_CPUCON_BASE, size, value);
+    } else if (addr >= N1G_DMA_SECONDARY_BASE && addr <= N1G_DMA_SECONDARY_BASE + 0x1fff) {
+        n1g_dev_dma_secondary_write(s, addr - N1G_DMA_SECONDARY_BASE, size, value);
     } else if (addr >= N1G_DMA_BASE && addr <= N1G_DMA_BASE + 0x1fff) {
         n1g_dev_dma_write(s, addr - N1G_DMA_BASE, size, value);
     } else if (addr >= N1G_GPIO_BASE && addr <= N1G_GPIO_BASE + 0x9ff) {
