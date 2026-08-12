@@ -12,6 +12,10 @@
 #define PCF_INT1 0x02u
 #define PCF_INT1M 0x05u
 #define PCF_OOCC1 0x08u
+#define PCF_RTCSC 0x0au
+#define PCF_RTCMN 0x0bu
+#define PCF_RTCSCA 0x11u
+#define PCF_RTCMNA 0x12u
 
 static int expect_u32(uint32_t actual, uint32_t expected, const char *message) {
     if (actual != expected) {
@@ -70,6 +74,35 @@ int main(void) {
     pcf_write_byte(&s, PCF_OOCC1, 0x60u);
     failed |= expect_u32((uint32_t)s.i2c.pcf_standby_requests, 1u,
                          "non-standby OOCC1 write changed request count");
+
+    failed |= expect_u32(pcf_read_byte(&s, PCF_RTCSCA), 0x7fu,
+                         "seconds alarm reset value is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCMNA), 0x7fu,
+                         "minutes alarm reset value is wrong");
+
+    s.opts.rtc_usec_per_tick = 1000000u;
+    pcf_write_byte(&s, PCF_RTCSCA, 0x01u);
+    s.counters.device_ticks++;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32(pcf_read_byte(&s, PCF_INT1), 0xc0u,
+                         "RTC second/alarm status was not latched") |
+              expect_u32((uint32_t)s.i2c.rtc_second_interrupts, 1u,
+                         "RTC second event count is wrong") |
+              expect_u32((uint32_t)s.i2c.rtc_alarm_interrupts, 1u,
+                         "RTC alarm event count is wrong");
+
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32(pcf_read_byte(&s, PCF_INT1), 0u,
+                         "alarm retriggered within the same RTC second");
+
+    s.counters.device_ticks += 59u;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32(pcf_read_byte(&s, PCF_RTCSC), 0x00u,
+                         "RTC seconds did not roll over") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCMN), 0x01u,
+                         "RTC minutes did not advance") |
+              expect_u32(pcf_read_byte(&s, PCF_INT1), 0x40u,
+                         "periodic second status was not latched");
 
     if (!failed) {
         puts("i2c pmu unit ok");

@@ -294,6 +294,7 @@ void n1g_bus_tick(n1g_state_t *s) {
     s->counters.device_ticks++;
     n1g_dev_opto_tick(s);
     n1g_dev_timer_tick(s);
+    n1g_dev_i2c_tick(s);
     n1g_dev_i2s_tick(s);
     n1g_dev_dma_tick(s);
     n1g_dev_serial_tick(s);

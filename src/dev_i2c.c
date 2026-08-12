@@ -29,6 +29,20 @@
 #define PCF50605_OOCC1_GOSTDBY 0x01u
 #define PCF50605_INT1 0x02u
 #define PCF50605_INT3 0x04u
+#define PCF50605_INT1_SECOND 0x40u
+#define PCF50605_INT1_ALARM 0x80u
+#define PCF50605_RTCSC 0x0au
+#define PCF50605_RTCYR 0x10u
+#define PCF50605_RTCSCA 0x11u
+#define PCF50605_RTCYRA 0x17u
+
+static const uint8_t pcf_alarm_reset[7] = {
+    0x7fu, 0x7fu, 0x3fu, 0x07u, 0x3fu, 0x1fu, 0xffu
+};
+
+static const uint8_t pcf_alarm_mask[7] = {
+    0x7fu, 0x7fu, 0x3fu, 0x07u, 0x3fu, 0x1fu, 0xffu
+};
 
 static int32_t wm8975_volume_q15(uint16_t value) {
     uint32_t level = value & 0x7fu;
@@ -157,7 +171,7 @@ static uint32_t bcd2dec(uint8_t v) {
  * seconds, so the Rockbox status-bar clock actually ticks. The default base
  * is 2026-01-01 12:00:00 (Thursday); a guest rtc_write_datetime replaces the
  * base and elapsed time restarts from that write. */
-static uint8_t pcf_rtc_read(n1g_state_t *s, uint8_t reg) {
+static void pcf_rtc_fields(const n1g_state_t *s, uint8_t fields[7]) {
     static const uint8_t days_in_month[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
     uint32_t sec = 0, min = 0, hour = 12, wday = 4, mday = 1, mon = 1, year = 26;
 
@@ -206,15 +220,19 @@ static uint8_t pcf_rtc_read(n1g_state_t *s, uint8_t reg) {
         }
     }
 
-    switch (reg) {
-    case 0x0a: return dec2bcd(sec);
-    case 0x0b: return dec2bcd(min);
-    case 0x0c: return dec2bcd(hour);
-    case 0x0d: return dec2bcd(wday % 7u);
-    case 0x0e: return dec2bcd(mday);
-    case 0x0f: return dec2bcd(mon);
-    default:   return dec2bcd(year);
-    }
+    fields[0] = dec2bcd(sec);
+    fields[1] = dec2bcd(min);
+    fields[2] = dec2bcd(hour);
+    fields[3] = dec2bcd(wday % 7u);
+    fields[4] = dec2bcd(mday);
+    fields[5] = dec2bcd(mon);
+    fields[6] = dec2bcd(year);
+}
+
+static uint8_t pcf_rtc_read(const n1g_state_t *s, uint8_t reg) {
+    uint8_t fields[7];
+    pcf_rtc_fields(s, fields);
+    return fields[reg - PCF50605_RTCSC];
 }
 
 static uint8_t pcf_read(n1g_state_t *s) {
@@ -224,7 +242,7 @@ static uint8_t pcf_read(n1g_state_t *s) {
         s->i2c.pcf_reg_reads[reg]++;
     }
 
-    if (reg >= 0x0au && reg <= 0x10u) {
+    if (reg >= PCF50605_RTCSC && reg <= PCF50605_RTCYR) {
         return pcf_rtc_read(s, reg);
     }
 
@@ -236,6 +254,10 @@ static uint8_t pcf_read(n1g_state_t *s) {
 
     if (reg < sizeof(s->i2c.pcf_regs) && (s->i2c.pcf_written & (1ull << reg)) != 0) {
         return s->i2c.pcf_regs[reg];
+    }
+
+    if (reg >= PCF50605_RTCSCA && reg <= PCF50605_RTCYRA) {
+        return pcf_alarm_reset[reg - PCF50605_RTCSCA];
     }
 
     switch (reg) {
@@ -274,12 +296,55 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
             if (reg == PCF50605_OOCC1 && (value & PCF50605_OOCC1_GOSTDBY) != 0u) {
                 s->i2c.pcf_standby_requests++;
             }
-            if (reg >= 0x0au && reg <= 0x10u) {
+            if (reg >= PCF50605_RTCSC && reg <= PCF50605_RTCYR) {
                 s->i2c.rtc_base_ticks = s->counters.device_ticks;
+                s->i2c.rtc_last_second = 0u;
+            }
+            if (reg >= PCF50605_RTCSCA && reg <= PCF50605_RTCYRA) {
+                s->i2c.rtc_alarm_match_active = false;
             }
         }
     }
     s->i2c.pcf_reg++;
+}
+
+void n1g_dev_i2c_tick(n1g_state_t *s) {
+    uint64_t elapsed_ticks = s->counters.device_ticks - s->i2c.rtc_base_ticks;
+    uint64_t elapsed_seconds =
+        elapsed_ticks * s->opts.rtc_usec_per_tick / 1000000ull;
+    if (elapsed_seconds == s->i2c.rtc_last_second) {
+        return;
+    }
+
+    s->i2c.rtc_last_second = elapsed_seconds;
+    s->i2c.pcf_regs[PCF50605_INT1] |= PCF50605_INT1_SECOND;
+    s->i2c.rtc_second_interrupts++;
+
+    uint8_t current[7];
+    pcf_rtc_fields(s, current);
+    bool any_enabled = false;
+    bool all_match = true;
+    for (uint8_t i = 0; i < 7u; i++) {
+        uint8_t reg = (uint8_t)(PCF50605_RTCSCA + i);
+        uint8_t alarm = (s->i2c.pcf_written & (1ull << reg)) != 0u
+                            ? s->i2c.pcf_regs[reg]
+                            : pcf_alarm_reset[i];
+        alarm &= pcf_alarm_mask[i];
+        if (alarm == pcf_alarm_reset[i]) {
+            continue;
+        }
+        any_enabled = true;
+        if (alarm != (current[i] & pcf_alarm_mask[i])) {
+            all_match = false;
+        }
+    }
+
+    bool match = any_enabled && all_match;
+    if (match && !s->i2c.rtc_alarm_match_active) {
+        s->i2c.pcf_regs[PCF50605_INT1] |= PCF50605_INT1_ALARM;
+        s->i2c.rtc_alarm_interrupts++;
+    }
+    s->i2c.rtc_alarm_match_active = match;
 }
 
 static void wm8975_write(n1g_state_t *s, uint8_t count) {
