@@ -50,6 +50,7 @@ void n1g_dev_i2c_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
 void n1g_dev_i2c_tick(n1g_state_t *s);
 void n1g_dev_i2c_get_rtc(const n1g_state_t *s, uint8_t fields[7]);
 void n1g_dev_i2c_advance_rtc(n1g_state_t *s, uint64_t seconds);
+uint32_t n1g_dev_i2c_battery_mv(const n1g_state_t *s);
 void n1g_dev_i2c_save_pcf(const n1g_state_t *s, n1g_pcf_backup_t *backup);
 void n1g_dev_i2c_restore_pcf(n1g_state_t *s, const n1g_pcf_backup_t *backup);
 void n1g_dev_i2c_onkey(n1g_state_t *s, bool pressed);

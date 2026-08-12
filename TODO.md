@@ -127,8 +127,13 @@ stereo output with stable playback controls and no unbounded buffering.
       registers while retaining writable interrupt masks.
 - [x] Track per-register PCF access and `OOCC1.GOSTDBY` requests without
       inventing a shutdown before guest firmware requests one.
-- [ ] Model battery voltage, capacity, charging state, charger detection, and
-      low-battery behavior as coherent hardware state.
+- [x] Drive the PCF ADC and BVM from one Nano-calibrated battery curve, with
+      conversion timing, ready/low-battery interrupts, BATOK status, debounce,
+      hysteresis, charger detection, and eight-second forced standby.
+- [ ] Model autonomous charge/discharge over elapsed time and charger mode,
+      current, completion, watchdog, and protection states.
+- [ ] Verify the Nano board's exact PCF variant ID, `BVMC` reset threshold,
+      and non-battery ADC input levels against a hardware register trace.
 - [x] Model RTC/calendar progression, datasheet alarm-register reset values,
       periodic-second status, field-selective alarm matching, and read-to-clear
       alarm status.

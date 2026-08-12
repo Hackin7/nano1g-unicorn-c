@@ -344,7 +344,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"rtc_second_events\":%llu,\"rtc_alarm_events\":%llu,"
                      "\"pcf_standby\":%s,\"pcf_standby_requests\":%llu,"
                      "\"pcf_standby_transitions\":%llu,\"pcf_wake_requests\":%llu,"
-                     "\"pcf_last_wake\":%u,"
+                     "\"pcf_last_wake\":%u,\"pcf_adc_ready\":%s,"
+                     "\"pcf_adc_conversions\":%llu,\"pcf_low_battery_events\":%llu,"
                      "\"lcd_words\":%llu,\"lcd_gram\":%llu,"
                      "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
                      "\"dma_lcd_transfers\":%llu,\"lcd_dma_accepts\":%llu,"
@@ -357,7 +358,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"i2c_txns\":%llu,\"i2c_last\":\"addr=0x%02x op=%s count=%u data=0x%08x\","
                      "\"wm8975\":\"writes=%llu resets=%llu mode=%s output=%u muted=%u rate=%u control=0x%03x power=0x%03x out1=0x%03x/0x%03x\","
                      "\"input_events\":%llu,\"input_suppressed\":%llu,\"input\":\"%s\","
-                     "\"battery_percent\":%u,\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,"
+                     "\"battery_percent\":%u,\"battery_mv\":%u,\"battery_low\":%s,"
+                     "\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,"
                      "\"backlight_on\":%s,\"backlight_level\":%u,\"backlight_mode\":\"%s\","
                      "\"backlight_pwm\":\"0x%08x\",\"backlight_pulses\":%llu,"
                      "\"clicker_on\":%s,\"clicker_period\":%u,\"clicker_duty\":%u,"
@@ -397,6 +399,9 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->i2c.pcf_standby_transitions,
                      (unsigned long long)s->i2c.pcf_wake_requests,
                      (unsigned)s->i2c.pcf_last_wake,
+                     s->i2c.pcf_adc_ready ? "true" : "false",
+                     (unsigned long long)s->i2c.pcf_adc_conversions,
+                     (unsigned long long)s->i2c.pcf_low_battery_events,
                      (unsigned long long)s->counters.lcd_words,
                      (unsigned long long)s->lcd2.gram_pixels,
                      (unsigned long long)s->lcd2.block_pixels,
@@ -447,6 +452,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->opto.suppressed_events,
                      s->opto.last_input[0] ? s->opto.last_input : "none",
                      s->opts.battery_percent,
+                     n1g_dev_i2c_battery_mv(s),
+                     s->i2c.pcf_low_battery ? "true" : "false",
                      s->opts.main_charger_connected ? "true" : "false",
                      s->opts.usb_charger_connected ? "true" : "false",
                      s->opts.hold_switch_engaged ? "true" : "false",

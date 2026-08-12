@@ -109,13 +109,18 @@ settle waits. `--hold-switch` starts the emulator with Hold engaged.
 - Browser framebuffer polling and status counters.
 - Browser click-wheel scroll and server-side tap select.
 - Native Hold-switch GPIO/IRQ handling and firmware-rendered Apple lock icon.
-- Runtime battery and charger controls backed by the existing PMU/GPIO model.
+- Runtime battery and charger controls backed by a shared Nano-calibrated PMU
+  voltage, timed ADC conversions, BVM low-battery status/interrupts, and GPIO
+  charger presence.
 - PCF50605 interrupt status is read-only and read-to-clear, interrupt masks
   retain guest writes, and `OOCC1.GOSTDBY` requests are counted. Both direct
   device and guest-I2C regressions cover these semantics.
 - PCF50605 RTC/calendar and field-selective alarm matching, with battery-domain
   continuity across browser restarts and optional process-level persistence
   through `--pcf-state PATH`.
+- PCF standby and reboot-style wake from RTC alarm, charger insertion, and the
+  Menu/ONKEY control, plus BVM-forced standby after an uncleared low-voltage
+  condition persists for eight seconds.
 - ATA Device Control software reset aborts active transfers, holds BSY until a
   device tick after release, restores the reset signature, and clears multiple
   mode without raising an IRQ.

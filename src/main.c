@@ -960,7 +960,7 @@ run_image:
              (unsigned long long)s.backlight.clicker_last_duration_ticks);
     if (s.i2c.addr_reads[0x08u] != 0u || s.i2c.addr_writes[0x08u] != 0u) {
         n1g_info(&s,
-                 "pcf50605_state reads=%llu writes=%llu oocs=0x%02x int=0x%02x/0x%02x/0x%02x masks=0x%02x/0x%02x/0x%02x oocc1=0x%02x oocc1_writes=%llu standby_requests=%llu",
+                 "pcf50605_state reads=%llu writes=%llu oocs=0x%02x int=0x%02x/0x%02x/0x%02x masks=0x%02x/0x%02x/0x%02x oocc1=0x%02x oocc1_writes=%llu standby_requests=%llu adc=%llu lowbat=%llu battery=%umV",
                  (unsigned long long)s.i2c.addr_reads[0x08u],
                  (unsigned long long)s.i2c.addr_writes[0x08u],
                  (unsigned)s.i2c.pcf_regs[0x01u],
@@ -972,7 +972,10 @@ run_image:
                  (unsigned)s.i2c.pcf_regs[0x07u],
                  (unsigned)s.i2c.pcf_regs[0x08u],
                  (unsigned long long)s.i2c.pcf_reg_writes[0x08u],
-                 (unsigned long long)s.i2c.pcf_standby_requests);
+                 (unsigned long long)s.i2c.pcf_standby_requests,
+                 (unsigned long long)s.i2c.pcf_adc_conversions,
+                 (unsigned long long)s.i2c.pcf_low_battery_events,
+                 n1g_dev_i2c_battery_mv(&s));
     }
     if (s.opts.verbose) {
         for (uint32_t addr = 0; addr < 128u; addr++) {

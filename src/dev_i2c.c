@@ -40,10 +40,24 @@
 #define PCF50605_INT1_ONKEYF 0x02u
 #define PCF50605_INT2_CHGINS 0x01u
 #define PCF50605_INT2_CHGRM 0x02u
+#define PCF50605_INT3_ADCRDY 0x01u
+#define PCF50605_INT3_LOWBAT 0x40u
 #define PCF50605_RTCSC 0x0au
 #define PCF50605_RTCYR 0x10u
 #define PCF50605_RTCSCA 0x11u
 #define PCF50605_RTCYRA 0x17u
+#define PCF50605_ADCC1 0x2eu
+#define PCF50605_ADCC2 0x2fu
+#define PCF50605_ADCC2_START 0x01u
+#define PCF50605_ADCC2_SYNC 0x60u
+#define PCF50605_ADCC2_RES8 0x80u
+#define PCF50605_ADCS1 0x30u
+#define PCF50605_ADCS2 0x31u
+#define PCF50605_ADCS3 0x32u
+#define PCF50605_BVMC 0x34u
+#define PCF50605_BVMC_LOWBAT 0x01u
+#define PCF50605_BVMC_THRESHOLD 0x0eu
+#define PCF50605_BVMC_DISABLE_DEBOUNCE 0x10u
 #define PCF50605_RTC_WRITTEN_MASK (0x7full << PCF50605_RTCSC)
 
 static const uint8_t pcf_alarm_reset[7] = {
@@ -68,6 +82,32 @@ static void pcf_wake(n1g_state_t *s, n1g_pcf_wake_reason_t reason) {
     s->i2c.pcf_standby_deadline = 0u;
     s->i2c.pcf_wake_requests++;
     s->i2c.pcf_last_wake = reason;
+}
+
+static uint64_t pcf_ticks_for_usec(const n1g_state_t *s, uint64_t usec) {
+    uint64_t scale = s->opts.rtc_usec_per_tick != 0u
+                         ? s->opts.rtc_usec_per_tick
+                         : 1u;
+    uint64_t ticks = (usec + scale - 1u) / scale;
+    return ticks != 0u ? ticks : 1u;
+}
+
+static void pcf_enter_standby(n1g_state_t *s) {
+    if (s->i2c.pcf_standby) {
+        return;
+    }
+    s->i2c.pcf_standby = true;
+    s->i2c.pcf_standby_deadline = 0u;
+    s->i2c.pcf_standby_transitions++;
+    s->i2c.pcf_regs[PCF50605_OOCC1] &= (uint8_t)~PCF50605_OOCC1_GOSTDBY;
+    s->i2c.pcf_regs[PCF50605_ADCC1] = 0u;
+    s->i2c.pcf_regs[PCF50605_ADCC2] = 0u;
+    s->i2c.pcf_written &= ~((1ull << PCF50605_ADCC1) |
+                            (1ull << PCF50605_ADCC2));
+    s->i2c.pcf_adc_deadline = 0u;
+    s->i2c.pcf_adc_ready = false;
+    s->cpu[N1G_CORE_CPU].halted = true;
+    s->cpu[N1G_CORE_COP].halted = true;
 }
 
 static int32_t wm8975_volume_q15(uint16_t value) {
@@ -169,7 +209,7 @@ static void write_data_bytes(n1g_state_t *s, uint32_t first, uint32_t size, uint
  * same 3230 mV floor, so any mock must interpolate from this table rather
  * than scale linearly from a zero-volt baseline.
  */
-static uint32_t battery_percent_to_adc_raw(uint32_t percent) {
+static uint32_t battery_percent_to_mv(uint32_t percent) {
     static const uint16_t table_mv[11] = {
         3230, 3620, 3700, 3730, 3750, 3780, 3830, 3890, 3950, 4030, 4160
     };
@@ -180,9 +220,71 @@ static uint32_t battery_percent_to_adc_raw(uint32_t percent) {
     uint32_t rem = percent % 10u;
     uint32_t lo = table_mv[idx];
     uint32_t hi = table_mv[idx < 10u ? idx + 1u : 10u];
-    uint32_t mv = lo + ((hi - lo) * rem) / 10u;
+    return lo + ((hi - lo) * rem) / 10u;
+}
+
+uint32_t n1g_dev_i2c_battery_mv(const n1g_state_t *s) {
+    return battery_percent_to_mv(s->opts.battery_percent);
+}
+
+static uint32_t battery_percent_to_adc_raw(uint32_t percent) {
+    uint32_t mv = battery_percent_to_mv(percent);
     /* Inverse of battery_adc_voltage(): mv = (raw * 6000) >> 10. */
     return (mv * 1024u + 3000u) / 6000u;
+}
+
+static uint8_t pcf_bvm_control(const n1g_state_t *s) {
+    /* The Nano's 3.23 V empty point sits below its 3.33 V disk-safe point;
+     * use the 3.3 V variant threshold until a board-specific PMU ID dump is
+     * available. Guest programming still overrides every writable bit.
+     */
+    return (s->i2c.pcf_written & (1ull << PCF50605_BVMC)) != 0u
+               ? s->i2c.pcf_regs[PCF50605_BVMC] & 0x1eu
+               : 0x0cu;
+}
+
+static uint32_t pcf_bvm_threshold_mv(const n1g_state_t *s) {
+    uint8_t control = pcf_bvm_control(s);
+    uint32_t code = (control & PCF50605_BVMC_THRESHOLD) >> 1u;
+    return code == 0u ? 2700u : 2700u + code * 100u;
+}
+
+static uint16_t pcf_adc_input(const n1g_state_t *s, uint8_t mux) {
+    uint32_t mv = n1g_dev_i2c_battery_mv(s);
+    uint32_t raw;
+    switch (mux) {
+    case 0u:
+    case 2u:
+        raw = battery_percent_to_adc_raw(s->opts.battery_percent);
+        break;
+    case 1u:
+    case 3u:
+    case 12u:
+        raw = mv > 3000u ? ((mv - 3000u) * 1024u + 1200u) / 2400u : 0u;
+        break;
+    case 4u:
+        raw = 512u;
+        break;
+    default:
+        raw = 0u;
+        break;
+    }
+    return (uint16_t)(raw < 1024u ? raw : 1023u);
+}
+
+static void pcf_complete_adc(n1g_state_t *s) {
+    uint8_t control = s->i2c.pcf_regs[PCF50605_ADCC2];
+    uint8_t mux = (control >> 1u) & 0x0fu;
+    s->i2c.pcf_adc_result1 = pcf_adc_input(s, mux);
+    s->i2c.pcf_adc_result2 = mux == 12u ? pcf_adc_input(s, 3u) : 0u;
+    if ((control & PCF50605_ADCC2_RES8) != 0u) {
+        s->i2c.pcf_adc_result1 &= 0x03fcu;
+        s->i2c.pcf_adc_result2 &= 0x03fcu;
+    }
+    s->i2c.pcf_adc_ready = true;
+    s->i2c.pcf_adc_deadline = 0u;
+    s->i2c.pcf_adc_conversions++;
+    s->i2c.pcf_regs[PCF50605_INT3] |= PCF50605_INT3_ADCRDY;
 }
 
 static uint8_t dec2bcd(uint32_t v) {
@@ -324,7 +426,10 @@ static uint8_t pcf_read(n1g_state_t *s) {
 
     if (reg == PCF50605_OOCS) {
         uint8_t value = s->i2c.pcf_regs[PCF50605_OOCS] & 0x84u;
-        value |= 0x58u;
+        value |= 0x50u;
+        if (!s->i2c.pcf_low_battery) {
+            value |= 0x08u;
+        }
         if (s->opts.main_charger_connected || s->opts.usb_charger_connected) {
             value |= 0x20u;
         }
@@ -334,6 +439,23 @@ static uint8_t pcf_read(n1g_state_t *s) {
     if (reg == PCF50605_OOCC1 &&
         (s->i2c.pcf_written & (1ull << PCF50605_OOCC1)) == 0u) {
         return 0x60u;
+    }
+
+    if (reg == PCF50605_BVMC) {
+        uint8_t value = pcf_bvm_control(s);
+        return value | (s->i2c.pcf_low_battery ? PCF50605_BVMC_LOWBAT : 0u);
+    }
+
+    if (reg == PCF50605_ADCS1) {
+        return (uint8_t)(s->i2c.pcf_adc_result1 >> 2u);
+    }
+    if (reg == PCF50605_ADCS2) {
+        return (uint8_t)((s->i2c.pcf_adc_ready ? 0x80u : 0u) |
+                         ((s->i2c.pcf_adc_result2 & 0x03u) << 2u) |
+                         (s->i2c.pcf_adc_result1 & 0x03u));
+    }
+    if (reg == PCF50605_ADCS3) {
+        return (uint8_t)(s->i2c.pcf_adc_result2 >> 2u);
     }
 
     if (reg < sizeof(s->i2c.pcf_regs) && (s->i2c.pcf_written & (1ull << reg)) != 0) {
@@ -347,14 +469,6 @@ static uint8_t pcf_read(n1g_state_t *s) {
     switch (reg) {
     case 0x00: /* ID */
         return 0;
-    case 0x30: { /* ADCS1: upper 8 bits of the 10-bit battery ADC reading. */
-        uint32_t raw = battery_percent_to_adc_raw(s->opts.battery_percent);
-        return (uint8_t)((raw >> 2) & 0xffu);
-    }
-    case 0x31: { /* ADCS2: ready flag plus the low 2 bits of the battery ADC reading. */
-        uint32_t raw = battery_percent_to_adc_raw(s->opts.battery_percent);
-        return (uint8_t)(0x80u | (raw & 0x3u));
-    }
     case 0x38: /* GPOC1 default used by Clicky for this PMU family. */
         return 0x04;
     default:
@@ -375,17 +489,29 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
         uint8_t reg = s->i2c.pcf_reg;
         s->i2c.pcf_reg_writes[reg]++;
         if (reg < PCF50605_INT1 || reg > PCF50605_INT3) {
-            s->i2c.pcf_regs[reg] = reg == PCF50605_OOCS
-                                      ? (uint8_t)(value & 0x04u)
-                                      : value;
+            if (reg == PCF50605_OOCS) {
+                s->i2c.pcf_regs[reg] = value & 0x04u;
+            } else if (reg == PCF50605_BVMC) {
+                s->i2c.pcf_regs[reg] = value & 0x1eu;
+            } else {
+                s->i2c.pcf_regs[reg] = value;
+            }
             s->i2c.pcf_written |= 1ull << reg;
             if (reg == PCF50605_OOCC1 && (value & PCF50605_OOCC1_GOSTDBY) != 0u) {
                 s->i2c.pcf_standby_requests++;
                 if (!s->i2c.pcf_standby && s->i2c.pcf_standby_deadline == 0u) {
-                    uint64_t ticks = (1000u + s->opts.rtc_usec_per_tick - 1u) /
-                                     s->opts.rtc_usec_per_tick;
                     s->i2c.pcf_standby_deadline =
-                        s->counters.device_ticks + (ticks != 0u ? ticks : 1u);
+                        s->counters.device_ticks + pcf_ticks_for_usec(s, 1000u);
+                }
+            }
+            if (reg == PCF50605_ADCC2 &&
+                (value & PCF50605_ADCC2_START) != 0u) {
+                s->i2c.pcf_regs[reg] &= (uint8_t)~PCF50605_ADCC2_START;
+                s->i2c.pcf_adc_ready = false;
+                s->i2c.pcf_adc_deadline = 0u;
+                if ((value & PCF50605_ADCC2_SYNC) == 0u) {
+                    s->i2c.pcf_adc_deadline =
+                        s->counters.device_ticks + pcf_ticks_for_usec(s, 25u);
                 }
             }
             if (reg >= PCF50605_RTCSC && reg <= PCF50605_RTCYR) {
@@ -403,12 +529,47 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
 void n1g_dev_i2c_tick(n1g_state_t *s) {
     if (!s->i2c.pcf_standby && s->i2c.pcf_standby_deadline != 0u &&
         s->counters.device_ticks >= s->i2c.pcf_standby_deadline) {
-        s->i2c.pcf_standby = true;
-        s->i2c.pcf_standby_deadline = 0u;
-        s->i2c.pcf_standby_transitions++;
-        s->i2c.pcf_regs[PCF50605_OOCC1] &= (uint8_t)~PCF50605_OOCC1_GOSTDBY;
-        s->cpu[N1G_CORE_CPU].halted = true;
-        s->cpu[N1G_CORE_COP].halted = true;
+        pcf_enter_standby(s);
+    }
+
+    if (s->i2c.pcf_adc_deadline != 0u &&
+        s->counters.device_ticks >= s->i2c.pcf_adc_deadline) {
+        pcf_complete_adc(s);
+    }
+
+    uint32_t battery_mv = n1g_dev_i2c_battery_mv(s);
+    uint32_t threshold_mv = pcf_bvm_threshold_mv(s);
+    bool below = battery_mv < threshold_mv;
+    if (!s->i2c.pcf_low_battery && below) {
+        if (s->i2c.pcf_low_battery_deadline == 0u) {
+            uint64_t debounce =
+                (pcf_bvm_control(s) & PCF50605_BVMC_DISABLE_DEBOUNCE) != 0u
+                    ? 1u
+                    : pcf_ticks_for_usec(s, 62000u);
+            s->i2c.pcf_low_battery_deadline =
+                s->counters.device_ticks + debounce;
+        } else if (s->counters.device_ticks >= s->i2c.pcf_low_battery_deadline) {
+            s->i2c.pcf_low_battery = true;
+            s->i2c.pcf_low_battery_deadline = 0u;
+            s->i2c.pcf_low_battery_events++;
+            s->i2c.pcf_regs[PCF50605_INT3] |= PCF50605_INT3_LOWBAT;
+            s->i2c.pcf_low_battery_standby_deadline =
+                s->counters.device_ticks + pcf_ticks_for_usec(s, 8000000u);
+        }
+    } else if (s->i2c.pcf_low_battery &&
+               battery_mv >= threshold_mv + threshold_mv * 4u / 100u) {
+        s->i2c.pcf_low_battery = false;
+        s->i2c.pcf_low_battery_deadline = 0u;
+        s->i2c.pcf_low_battery_standby_deadline = 0u;
+    } else if (!below) {
+        s->i2c.pcf_low_battery_deadline = 0u;
+    }
+
+    if (!s->i2c.pcf_standby &&
+        s->i2c.pcf_low_battery_standby_deadline != 0u &&
+        s->counters.device_ticks >= s->i2c.pcf_low_battery_standby_deadline) {
+        s->i2c.pcf_low_battery_standby_deadline = 0u;
+        pcf_enter_standby(s);
     }
 
     uint64_t elapsed_ticks = s->counters.device_ticks - s->i2c.rtc_base_ticks;

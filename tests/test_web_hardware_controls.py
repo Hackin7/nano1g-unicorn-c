@@ -124,6 +124,8 @@ def main():
             final = request(f"{base_url}/status.json", deadline)
             if final.get("battery_percent") != 37:
                 raise RuntimeError("invalid battery update changed live hardware state")
+            if final.get("battery_mv") != 3744 or final.get("battery_low") is not False:
+                raise RuntimeError(f"battery ADC/BVM state is incoherent: {final}")
 
             request(f"{base_url}/hardware?rtc_usec_per_tick=4096", deadline)
             rtc_advanced = wait_status(
@@ -133,6 +135,34 @@ def main():
                 "accelerated PCF RTC progression",
             )
             rtc_before = datetime.strptime(rtc_advanced["rtc_bcd"], "%y-%m-%dT%H:%M:%S")
+
+            request(f"{base_url}/hardware?battery=0", deadline)
+            wait_status(
+                base_url,
+                lambda s: s.get("battery_low") is True
+                and s.get("pcf_low_battery_events", 0) == 1,
+                deadline,
+                "debounced PCF low-battery event",
+            )
+            standby = wait_status(
+                base_url,
+                lambda s: s.get("pcf_standby") is True,
+                deadline,
+                "PCF low-battery forced standby",
+            )
+            request(f"{base_url}/hardware?battery=37", deadline)
+            request(f"{base_url}/input?button=menu&tap=1", deadline)
+            woke = wait_status(
+                base_url,
+                lambda s: s.get("pcf_standby") is False
+                and s.get("battery_percent") == 37
+                and s.get("device_ticks", standby["device_ticks"])
+                < standby["device_ticks"],
+                deadline,
+                "Menu wake and exact-image reboot",
+            )
+            if woke.get("preset") != "rockbox":
+                raise RuntimeError("PCF wake changed the running firmware preset")
 
             request(f"{base_url}/control?restart=rockbox", deadline)
             restarted = wait_status(

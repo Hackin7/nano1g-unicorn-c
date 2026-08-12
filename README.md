@@ -181,7 +181,10 @@ Useful options:
 - `--battery-percent N`: mock the PCF PMU battery ADC (`ADCS1`/`ADCS2`,
   `src/dev_i2c.c`) to read as `N` percent (0-100), interpolated from
   Rockbox's real IPOD_NANO discharge-voltage table so the status-bar battery
-  icon and low-battery/shutoff logic respond correctly. Default `100`.
+  icon and low-battery/shutoff logic respond correctly. ADC starts take the
+  documented 25 microseconds and latch `INT3.ADCRDY`; the same voltage drives
+  debounced `BVMC.BATOK`, `OOCS.BATOK`, `INT3.LOWBAT`, hysteresis, and the
+  PMU's eight-second forced-standby path. Default `100`.
 - `--main-charger` / `--usb-charger`: report the FireWire/main or USB charger
   as connected on `GPIOL_INPUT_VAL` (`src/dev_gpio.c`), matching real
   hardware's `power_input_status()` bits. Default: neither connected. Every

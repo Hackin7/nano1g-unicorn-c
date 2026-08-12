@@ -12,6 +12,7 @@
 #define PCF_OOCS 0x01u
 #define PCF_INT1 0x02u
 #define PCF_INT2 0x03u
+#define PCF_INT3 0x04u
 #define PCF_INT1M 0x05u
 #define PCF_OOCC1 0x08u
 #define PCF_RTCSC 0x0au
@@ -23,6 +24,10 @@
 #define PCF_RTCYR 0x10u
 #define PCF_RTCSCA 0x11u
 #define PCF_RTCMNA 0x12u
+#define PCF_ADCC2 0x2fu
+#define PCF_ADCS1 0x30u
+#define PCF_ADCS2 0x31u
+#define PCF_BVMC 0x34u
 
 static int expect_u32(uint32_t actual, uint32_t expected, const char *message) {
     if (actual != expected) {
@@ -65,6 +70,57 @@ int main(void) {
     failed |= expect_u32(pcf_read_byte(&s, PCF_OOCS), 0x78u,
                          "OOCS charger state did not follow hardware state");
     s.opts.usb_charger_connected = false;
+
+    s.opts.battery_percent = 50u;
+    pcf_write_byte(&s, PCF_ADCC2, 0x01u);
+    failed |= expect_u32(pcf_read_byte(&s, PCF_ADCC2), 0u,
+                         "ADCSTART did not auto-clear") |
+              expect_u32(pcf_read_byte(&s, PCF_ADCS2), 0u,
+                         "ADC completed before its conversion deadline");
+    s.counters.device_ticks++;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32(pcf_read_byte(&s, PCF_ADCS1), 0xa1u,
+                         "battery ADC high result is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_ADCS2), 0x81u,
+                         "battery ADC low result or ready status is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_INT3), 0x01u,
+                         "ADC ready interrupt was not latched") |
+              expect_u32((uint32_t)s.i2c.pcf_adc_conversions, 1u,
+                         "ADC conversion count is wrong");
+
+    s.opts.battery_percent = 0u;
+    n1g_dev_i2c_tick(&s);
+    s.counters.device_ticks += 61u;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_low_battery, 0u,
+                         "low battery ignored the BVM debounce");
+    s.counters.device_ticks++;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_low_battery, 1u,
+                         "BVM did not enter low-battery state") |
+              expect_u32(pcf_read_byte(&s, PCF_BVMC), 0x0du,
+                         "BVMC status or default threshold is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_OOCS), 0x50u,
+                         "OOCS BATOK did not follow the BVM") |
+              expect_u32(pcf_read_byte(&s, PCF_INT3), 0x40u,
+                         "low-battery interrupt was not latched") |
+              expect_u32((uint32_t)s.i2c.pcf_low_battery_events, 1u,
+                         "low-battery event count is wrong");
+    s.counters.device_ticks += 7999u;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_standby, 0u,
+                         "BVM forced standby before eight seconds");
+    s.counters.device_ticks++;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_standby, 1u,
+                         "BVM did not force standby after eight seconds");
+    s.opts.battery_percent = 10u;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_low_battery, 0u,
+                         "BVM hysteresis did not clear recovered battery state");
+
+    memset(&s, 0, sizeof(s));
+    s.opts.rtc_usec_per_tick = 1000u;
 
     pcf_write_byte(&s, PCF_RTCSCA, 0x01u);
     pcf_write_byte(&s, PCF_OOCC1, 0x11u);
