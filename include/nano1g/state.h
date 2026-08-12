@@ -246,6 +246,13 @@ typedef struct n1g_pcf_backup {
     bool valid;
 } n1g_pcf_backup_t;
 
+typedef enum n1g_pcf_wake_reason {
+    N1G_PCF_WAKE_NONE = 0,
+    N1G_PCF_WAKE_RTC_ALARM = 1,
+    N1G_PCF_WAKE_CHARGER = 2,
+    N1G_PCF_WAKE_ONKEY = 3
+} n1g_pcf_wake_reason_t;
+
 typedef struct n1g_i2c {
     uint32_t regs[0x100 / 4];
     uint64_t addr_reads[128];
@@ -272,10 +279,15 @@ typedef struct n1g_i2c {
     uint64_t pcf_reg_reads[0x40];
     uint64_t pcf_reg_writes[0x40];
     uint64_t pcf_standby_requests;
+    uint64_t pcf_standby_transitions;
+    uint64_t pcf_wake_requests;
+    uint64_t pcf_standby_deadline;
     uint64_t rtc_base_ticks;
     uint64_t rtc_last_second;
     uint64_t rtc_second_interrupts;
     uint64_t rtc_alarm_interrupts;
+    n1g_pcf_wake_reason_t pcf_last_wake;
+    bool pcf_standby;
     bool rtc_alarm_match_active;
     bool pcf_reg_set;
 } n1g_i2c_t;

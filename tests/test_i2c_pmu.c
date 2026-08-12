@@ -9,7 +9,9 @@
 
 #define PCF_WRITE_ADDR 0x10u
 #define PCF_READ_ADDR 0x11u
+#define PCF_OOCS 0x01u
 #define PCF_INT1 0x02u
+#define PCF_INT2 0x03u
 #define PCF_INT1M 0x05u
 #define PCF_OOCC1 0x08u
 #define PCF_RTCSC 0x0au
@@ -53,13 +55,63 @@ static void pcf_write_byte(n1g_state_t *s, uint8_t reg, uint8_t value) {
 int main(void) {
     n1g_state_t s;
     memset(&s, 0, sizeof(s));
+    s.opts.rtc_usec_per_tick = 1000u;
+
+    int failed = expect_u32(pcf_read_byte(&s, PCF_OOCS), 0x58u,
+                            "OOCS reset power-good state is wrong") |
+                 expect_u32(pcf_read_byte(&s, PCF_OOCC1), 0x60u,
+                            "OOCC1 reset wake configuration is wrong");
+    s.opts.usb_charger_connected = true;
+    failed |= expect_u32(pcf_read_byte(&s, PCF_OOCS), 0x78u,
+                         "OOCS charger state did not follow hardware state");
+    s.opts.usb_charger_connected = false;
+
+    pcf_write_byte(&s, PCF_RTCSCA, 0x01u);
+    pcf_write_byte(&s, PCF_OOCC1, 0x11u);
+    s.counters.device_ticks++;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_standby, 1u,
+                         "GOSTDBY did not enter standby") |
+              expect_u32((uint32_t)s.i2c.pcf_standby_transitions, 1u,
+                         "standby transition count is wrong") |
+              expect_u32((uint32_t)s.cpu[N1G_CORE_CPU].halted, 1u,
+                         "standby did not halt the CPU") |
+              expect_u32(pcf_read_byte(&s, PCF_OOCC1), 0x10u,
+                         "GOSTDBY did not auto-clear");
+    s.counters.device_ticks += 999u;
+    n1g_dev_i2c_tick(&s);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_standby, 0u,
+                         "RTC alarm did not leave standby") |
+              expect_u32((uint32_t)s.i2c.pcf_wake_requests, 1u,
+                         "RTC alarm wake request count is wrong") |
+              expect_u32((uint32_t)s.i2c.pcf_last_wake,
+                         N1G_PCF_WAKE_RTC_ALARM,
+                         "RTC alarm wake reason is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_INT1), 0xc0u,
+                         "RTC second/alarm status was not latched during wake");
+
+    pcf_write_byte(&s, PCF_OOCC1, 0x20u);
+    s.i2c.pcf_standby = true;
+    n1g_dev_i2c_charger_event(&s, true);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_last_wake, N1G_PCF_WAKE_CHARGER,
+                         "charger wake reason is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_INT2), 0x01u,
+                         "charger insertion status was not latched");
+    s.i2c.pcf_standby = true;
+    n1g_dev_i2c_onkey(&s, true);
+    failed |= expect_u32((uint32_t)s.i2c.pcf_last_wake, N1G_PCF_WAKE_ONKEY,
+                         "ONKEY wake reason is wrong") |
+              expect_u32(pcf_read_byte(&s, PCF_INT1), 0x02u,
+                         "ONKEY status was not latched");
+
+    memset(&s, 0, sizeof(s));
     s.opts.rtc_usec_per_tick = 1u;
 
     s.i2c.pcf_regs[PCF_INT1] = 0xa5u;
-    int failed = expect_u32(pcf_read_byte(&s, PCF_INT1), 0xa5u,
-                            "first interrupt-status read lost pending bits") |
-                 expect_u32(pcf_read_byte(&s, PCF_INT1), 0u,
-                            "interrupt-status read did not clear pending bits");
+    failed |= expect_u32(pcf_read_byte(&s, PCF_INT1), 0xa5u,
+                         "first interrupt-status read lost pending bits") |
+              expect_u32(pcf_read_byte(&s, PCF_INT1), 0u,
+                         "interrupt-status read did not clear pending bits");
 
     pcf_write_byte(&s, PCF_INT1, 0x5au);
     failed |= expect_u32(pcf_read_byte(&s, PCF_INT1), 0u,
@@ -70,15 +122,6 @@ int main(void) {
     pcf_write_byte(&s, PCF_INT1M, 0x96u);
     failed |= expect_u32(pcf_read_byte(&s, PCF_INT1M), 0x96u,
                          "interrupt mask did not retain a guest write");
-
-    pcf_write_byte(&s, PCF_OOCC1, 0x61u);
-    failed |= expect_u32(pcf_read_byte(&s, PCF_OOCC1), 0x61u,
-                         "OOCC1 did not retain wake and standby bits") |
-              expect_u32((uint32_t)s.i2c.pcf_standby_requests, 1u,
-                         "GOSTDBY did not record one standby request");
-    pcf_write_byte(&s, PCF_OOCC1, 0x60u);
-    failed |= expect_u32((uint32_t)s.i2c.pcf_standby_requests, 1u,
-                         "non-standby OOCC1 write changed request count");
 
     failed |= expect_u32(pcf_read_byte(&s, PCF_RTCSCA), 0x7fu,
                          "seconds alarm reset value is wrong") |

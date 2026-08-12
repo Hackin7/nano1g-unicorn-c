@@ -218,6 +218,7 @@ if(BUILD_TESTING)
     src/dev_backlight.c
     src/dev_gpio.c
     src/dev_opto.c
+    src/dev_i2c.c
     src/trace.c
   )
   target_include_directories(gpio_power_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
@@ -235,6 +236,7 @@ if(BUILD_TESTING)
     src/dev_backlight.c
     src/dev_gpio.c
     src/dev_opto.c
+    src/dev_i2c.c
     src/trace.c
   )
   target_include_directories(backlight_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
@@ -267,6 +269,7 @@ if(BUILD_TESTING)
     src/dev_opto.c
     src/dev_gpio.c
     src/dev_backlight.c
+    src/dev_i2c.c
     src/dev_lcd2.c
     src/trace.c
   )

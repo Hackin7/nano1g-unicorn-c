@@ -139,6 +139,11 @@ bool n1g_dev_opto_button(n1g_state_t *s, const char *button, bool pressed) {
     if (bit == 0) {
         return false;
     }
+    if (pressed && strcmp(button, "menu") == 0 && s->i2c.pcf_standby) {
+        n1g_dev_i2c_onkey(s, true);
+        set_last_input(s, "wake", button);
+        return true;
+    }
     if (suppress_for_hold(s, button)) {
         return true;
     }
@@ -158,6 +163,11 @@ bool n1g_dev_opto_tap(n1g_state_t *s, const char *button, uint64_t hold_ticks) {
     uint32_t bit = button_bit(button);
     if (bit == 0) {
         return false;
+    }
+    if (strcmp(button, "menu") == 0 && s->i2c.pcf_standby) {
+        n1g_dev_i2c_onkey(s, true);
+        set_last_input(s, "wake", button);
+        return true;
     }
     if (suppress_for_hold(s, button)) {
         return true;

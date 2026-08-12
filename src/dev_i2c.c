@@ -27,10 +27,19 @@
 
 #define PCF50605_OOCC1 0x08u
 #define PCF50605_OOCC1_GOSTDBY 0x01u
+#define PCF50605_OOCC1_RTCWAK 0x10u
+#define PCF50605_OOCC1_CHGWAK 0x20u
+#define PCF50605_OOCS 0x01u
 #define PCF50605_INT1 0x02u
+#define PCF50605_INT2 0x03u
 #define PCF50605_INT3 0x04u
+#define PCF50605_INT1M 0x05u
+#define PCF50605_INT2M 0x06u
 #define PCF50605_INT1_SECOND 0x40u
 #define PCF50605_INT1_ALARM 0x80u
+#define PCF50605_INT1_ONKEYF 0x02u
+#define PCF50605_INT2_CHGINS 0x01u
+#define PCF50605_INT2_CHGRM 0x02u
 #define PCF50605_RTCSC 0x0au
 #define PCF50605_RTCYR 0x10u
 #define PCF50605_RTCSCA 0x11u
@@ -44,6 +53,22 @@ static const uint8_t pcf_alarm_reset[7] = {
 static const uint8_t pcf_alarm_mask[7] = {
     0x7fu, 0x7fu, 0x3fu, 0x07u, 0x3fu, 0x1fu, 0xffu
 };
+
+static uint8_t pcf_oocc1(const n1g_state_t *s) {
+    return (s->i2c.pcf_written & (1ull << PCF50605_OOCC1)) != 0u
+               ? s->i2c.pcf_regs[PCF50605_OOCC1]
+               : 0x60u;
+}
+
+static void pcf_wake(n1g_state_t *s, n1g_pcf_wake_reason_t reason) {
+    if (!s->i2c.pcf_standby) {
+        return;
+    }
+    s->i2c.pcf_standby = false;
+    s->i2c.pcf_standby_deadline = 0u;
+    s->i2c.pcf_wake_requests++;
+    s->i2c.pcf_last_wake = reason;
+}
 
 static int32_t wm8975_volume_q15(uint16_t value) {
     uint32_t level = value & 0x7fu;
@@ -297,6 +322,20 @@ static uint8_t pcf_read(n1g_state_t *s) {
         return value;
     }
 
+    if (reg == PCF50605_OOCS) {
+        uint8_t value = s->i2c.pcf_regs[PCF50605_OOCS] & 0x84u;
+        value |= 0x58u;
+        if (s->opts.main_charger_connected || s->opts.usb_charger_connected) {
+            value |= 0x20u;
+        }
+        return value;
+    }
+
+    if (reg == PCF50605_OOCC1 &&
+        (s->i2c.pcf_written & (1ull << PCF50605_OOCC1)) == 0u) {
+        return 0x60u;
+    }
+
     if (reg < sizeof(s->i2c.pcf_regs) && (s->i2c.pcf_written & (1ull << reg)) != 0) {
         return s->i2c.pcf_regs[reg];
     }
@@ -336,10 +375,18 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
         uint8_t reg = s->i2c.pcf_reg;
         s->i2c.pcf_reg_writes[reg]++;
         if (reg < PCF50605_INT1 || reg > PCF50605_INT3) {
-            s->i2c.pcf_regs[reg] = value;
+            s->i2c.pcf_regs[reg] = reg == PCF50605_OOCS
+                                      ? (uint8_t)(value & 0x04u)
+                                      : value;
             s->i2c.pcf_written |= 1ull << reg;
             if (reg == PCF50605_OOCC1 && (value & PCF50605_OOCC1_GOSTDBY) != 0u) {
                 s->i2c.pcf_standby_requests++;
+                if (!s->i2c.pcf_standby && s->i2c.pcf_standby_deadline == 0u) {
+                    uint64_t ticks = (1000u + s->opts.rtc_usec_per_tick - 1u) /
+                                     s->opts.rtc_usec_per_tick;
+                    s->i2c.pcf_standby_deadline =
+                        s->counters.device_ticks + (ticks != 0u ? ticks : 1u);
+                }
             }
             if (reg >= PCF50605_RTCSC && reg <= PCF50605_RTCYR) {
                 s->i2c.rtc_base_ticks = s->counters.device_ticks;
@@ -354,6 +401,16 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
 }
 
 void n1g_dev_i2c_tick(n1g_state_t *s) {
+    if (!s->i2c.pcf_standby && s->i2c.pcf_standby_deadline != 0u &&
+        s->counters.device_ticks >= s->i2c.pcf_standby_deadline) {
+        s->i2c.pcf_standby = true;
+        s->i2c.pcf_standby_deadline = 0u;
+        s->i2c.pcf_standby_transitions++;
+        s->i2c.pcf_regs[PCF50605_OOCC1] &= (uint8_t)~PCF50605_OOCC1_GOSTDBY;
+        s->cpu[N1G_CORE_CPU].halted = true;
+        s->cpu[N1G_CORE_COP].halted = true;
+    }
+
     uint64_t elapsed_ticks = s->counters.device_ticks - s->i2c.rtc_base_ticks;
     uint64_t elapsed_seconds =
         elapsed_ticks * s->opts.rtc_usec_per_tick / 1000000ull;
@@ -388,8 +445,29 @@ void n1g_dev_i2c_tick(n1g_state_t *s) {
     if (match && !s->i2c.rtc_alarm_match_active) {
         s->i2c.pcf_regs[PCF50605_INT1] |= PCF50605_INT1_ALARM;
         s->i2c.rtc_alarm_interrupts++;
+        if ((pcf_oocc1(s) & PCF50605_OOCC1_RTCWAK) != 0u &&
+            (s->i2c.pcf_regs[PCF50605_INT1M] & PCF50605_INT1_ALARM) == 0u) {
+            pcf_wake(s, N1G_PCF_WAKE_RTC_ALARM);
+        }
     }
     s->i2c.rtc_alarm_match_active = match;
+}
+
+void n1g_dev_i2c_onkey(n1g_state_t *s, bool pressed) {
+    if (!pressed) {
+        return;
+    }
+    s->i2c.pcf_regs[PCF50605_INT1] |= PCF50605_INT1_ONKEYF;
+    pcf_wake(s, N1G_PCF_WAKE_ONKEY);
+}
+
+void n1g_dev_i2c_charger_event(n1g_state_t *s, bool inserted) {
+    uint8_t event = inserted ? PCF50605_INT2_CHGINS : PCF50605_INT2_CHGRM;
+    s->i2c.pcf_regs[PCF50605_INT2] |= event;
+    if (inserted && (pcf_oocc1(s) & PCF50605_OOCC1_CHGWAK) != 0u &&
+        (s->i2c.pcf_regs[PCF50605_INT2M] & PCF50605_INT2_CHGINS) == 0u) {
+        pcf_wake(s, N1G_PCF_WAKE_CHARGER);
+    }
 }
 
 static void wm8975_write(n1g_state_t *s, uint8_t count) {

@@ -171,6 +171,9 @@ const char *n1g_dev_backlight_mode(const n1g_state_t *s) {
 }
 
 bool n1g_dev_backlight_powered(const n1g_state_t *s) {
+    if (s->i2c.pcf_standby) {
+        return false;
+    }
     if (s->backlight.dimmer_seen || s->backlight.nano_power_seen) {
         return s->backlight.nano_power_seen && s->backlight.nano_powered;
     }

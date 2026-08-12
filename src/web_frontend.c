@@ -342,6 +342,9 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"device_ticks\":%llu,\"rtc_usec_per_tick\":%u,"
                      "\"rtc_bcd\":\"%02x-%02x-%02xT%02x:%02x:%02x\","
                      "\"rtc_second_events\":%llu,\"rtc_alarm_events\":%llu,"
+                     "\"pcf_standby\":%s,\"pcf_standby_requests\":%llu,"
+                     "\"pcf_standby_transitions\":%llu,\"pcf_wake_requests\":%llu,"
+                     "\"pcf_last_wake\":%u,"
                      "\"lcd_words\":%llu,\"lcd_gram\":%llu,"
                      "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
                      "\"dma_lcd_transfers\":%llu,\"lcd_dma_accepts\":%llu,"
@@ -389,6 +392,11 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      rtc[6], rtc[5], rtc[4], rtc[2], rtc[1], rtc[0],
                      (unsigned long long)s->i2c.rtc_second_interrupts,
                      (unsigned long long)s->i2c.rtc_alarm_interrupts,
+                     s->i2c.pcf_standby ? "true" : "false",
+                     (unsigned long long)s->i2c.pcf_standby_requests,
+                     (unsigned long long)s->i2c.pcf_standby_transitions,
+                     (unsigned long long)s->i2c.pcf_wake_requests,
+                     (unsigned)s->i2c.pcf_last_wake,
                      (unsigned long long)s->counters.lcd_words,
                      (unsigned long long)s->lcd2.gram_pixels,
                      (unsigned long long)s->lcd2.block_pixels,

@@ -316,6 +316,15 @@ static void infer_run_label(n1g_opts_t *opts) {
     }
 }
 
+static const char *current_preset(const n1g_opts_t *opts) {
+    const char *label = opts->run_label ? opts->run_label : "";
+    if (strcmp(label, apple_stage0_label) == 0) return "apple-stage0";
+    if (strcmp(label, apple_direct_label) == 0) return "apple-direct";
+    if (strcmp(label, apple_flash_label) == 0) return "apple-official";
+    if (strcmp(label, ipodlinux_label) == 0) return "ipodlinux";
+    return "rockbox";
+}
+
 static bool disk_output_active(const n1g_opts_t *opts) {
     if (!opts->disk_out_path || !opts->disk_path || !opts->disk_seed_path) {
         return false;
@@ -742,11 +751,13 @@ int main(int argc, char **argv) {
 
     int exit_code = 0;
     bool restart_now = false;
+    bool power_wake_restart = false;
     char restart_preset[32] = {0};
 
 run_image:
     do {
         restart_now = false;
+        power_wake_restart = false;
         restart_preset[0] = '\0';
         n1g_host_profile_t host_profile;
         memset(&host_profile, 0, sizeof(host_profile));
@@ -792,6 +803,13 @@ run_image:
             n1g_bus_tick(&s);
             if (s.opts.host_profile) {
                 host_profile_add(&host_profile.bus_ns, part_started_ns);
+            }
+            if (s.i2c.pcf_wake_requests != 0u) {
+                restart_now = true;
+                power_wake_restart = true;
+                (void)snprintf(restart_preset, sizeof(restart_preset), "%s",
+                               current_preset(&s.opts));
+                break;
             }
             if (s.opts.input_script) {
                 part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
@@ -842,7 +860,8 @@ run_image:
             break;
         }
 
-        n1g_info(&s, "web restart requested preset=%s", restart_preset);
+        n1g_info(&s, "%s restart requested preset=%s",
+                 power_wake_restart ? "pcf wake" : "web", restart_preset);
         if (!save_disk_output(&s)) {
             exit_code = 1;
             break;
@@ -851,7 +870,9 @@ run_image:
             exit_code = 1;
             break;
         }
-        n1g_opts_t next = make_restart_opts(&s, restart_preset);
+        n1g_opts_t next = power_wake_restart
+                              ? s.opts
+                              : make_restart_opts(&s, restart_preset);
         n1g_pcf_backup_t pcf_backup;
         n1g_dev_i2c_save_pcf(&s, &pcf_backup);
         destroy_state(&s);

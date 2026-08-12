@@ -136,11 +136,16 @@ bool n1g_dev_gpio_set_chargers(n1g_state_t *s, bool main_connected, bool usb_con
         s->opts.usb_charger_connected == usb_connected) {
         return true;
     }
+    bool old_connected = s->opts.main_charger_connected || s->opts.usb_charger_connected;
     uint32_t old_input = gpio_input_value(s, N1G_GPIOL_INPUT_VAL_OFFSET);
     s->opts.main_charger_connected = main_connected;
     s->opts.usb_charger_connected = usb_connected;
     uint32_t input = gpio_input_value(s, N1G_GPIOL_INPUT_VAL_OFFSET);
     gpio_latch_input_change(s, N1G_GPIOL_INPUT_VAL_OFFSET, old_input, input);
+    bool connected = main_connected || usb_connected;
+    if (connected != old_connected) {
+        n1g_dev_i2c_charger_event(s, connected);
+    }
     return true;
 }
 

@@ -137,7 +137,9 @@ stereo output with stable playback controls and no unbounded buffering.
 - [x] Persist the PCF battery domain across emulator process restarts with an
       explicit, versioned `--pcf-state` file and advance the RTC by elapsed
       host time while the process is stopped.
-- [ ] Model sleep, wake, power-off, and wake-source transitions.
+- [x] Model PCF `GOSTDBY`, CPU power cut, and reboot-style wake from an
+      unmasked RTC alarm, charger insertion, or the Nano Menu/ONKEY control.
+- [ ] Model the remaining watchdog, `EXTON`, and low-battery power transitions.
 - [x] Model the XMB RAM self-refresh request/status handshake used by Apple’s
       backlight timeout path, verify the post-startup 120-second native idle
       callback turns the display off, and verify a button IRQ wakes it.
