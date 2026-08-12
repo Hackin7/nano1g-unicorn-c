@@ -37,6 +37,7 @@ static const char *host_profile_mmio_device(uint32_t addr) {
     if (addr >= N1G_FLASH_ALIAS_BASE && addr < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE) return "flash_alias";
     if (addr >= N1G_CPUID_BASE && addr <= N1G_CPUID_BASE + 0xfff) return "cpuid";
     if (addr >= N1G_MAILBOX_BASE && addr <= N1G_MAILBOX_BASE + 0x2f) return "mailbox";
+    if (addr >= N1G_SYSREG_60003000_BASE && addr < N1G_SYSREG_60003000_BASE + N1G_SYSREG_60003000_SIZE) return "sysreg_60003000";
     if (addr >= N1G_INTC_BASE && addr <= N1G_INTC_BASE + 0x1ff) return "intc";
     if (addr >= N1G_TIMER_BASE && addr <= N1G_TIMER_BASE + 0x17) return "timer";
     if (addr >= N1G_DEVCON_BASE && addr <= N1G_DEVCON_BASE + 0xfff) return "devcon";
@@ -47,6 +48,7 @@ static const char *host_profile_mmio_device(uint32_t addr) {
     if (addr >= N1G_CACHECON_BASE && addr <= N1G_CACHECON_BASE + 0xfff) return "cachecon";
     if (addr >= N1G_EVP_BASE && addr <= N1G_EVP_BASE + 0x1f) return "evp";
     if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) return "ppcon";
+    if (addr >= N1G_SYSREG_70003800_BASE && addr < N1G_SYSREG_70003800_BASE + N1G_SYSREG_70003800_SIZE) return "sysreg_70003800";
     if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) return "lcd2";
     if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) return "i2s";
     if (addr >= N1G_PWM_BASE && addr <= N1G_PWM_BASE + 0x3f) return "pwm";
@@ -160,6 +162,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     if (addr >= N1G_MAILBOX_BASE && addr <= N1G_MAILBOX_BASE + 0x2f) {
         return n1g_dev_mailbox_read(s, core, addr - N1G_MAILBOX_BASE, size);
     }
+    if (addr >= N1G_SYSREG_60003000_BASE && addr < N1G_SYSREG_60003000_BASE + N1G_SYSREG_60003000_SIZE) {
+        return n1g_dev_sysreg_60003000_read(s, addr - N1G_SYSREG_60003000_BASE, size);
+    }
     if (addr >= N1G_INTC_BASE && addr <= N1G_INTC_BASE + 0x1ff) {
         return n1g_dev_intc_read(s, addr - N1G_INTC_BASE, size);
     }
@@ -189,6 +194,9 @@ uint32_t n1g_bus_read(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t s
     }
     if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) {
         return n1g_dev_ppcon_read(s, addr - N1G_PPCON_BASE, size);
+    }
+    if (addr >= N1G_SYSREG_70003800_BASE && addr < N1G_SYSREG_70003800_BASE + N1G_SYSREG_70003800_SIZE) {
+        return n1g_dev_sysreg_70003800_read(s, addr - N1G_SYSREG_70003800_BASE, size);
     }
     if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) {
         return n1g_dev_lcd2_read(s, addr - N1G_LCD2_BASE, size);
@@ -239,6 +247,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_flash_write(s, addr - N1G_FLASH_ALIAS_BASE, size, value);
     } else if (addr >= N1G_MAILBOX_BASE && addr <= N1G_MAILBOX_BASE + 0x2f) {
         n1g_dev_mailbox_write(s, core, addr - N1G_MAILBOX_BASE, size, value);
+    } else if (addr >= N1G_SYSREG_60003000_BASE && addr < N1G_SYSREG_60003000_BASE + N1G_SYSREG_60003000_SIZE) {
+        n1g_dev_sysreg_60003000_write(s, addr - N1G_SYSREG_60003000_BASE, size, value);
     } else if (addr >= N1G_INTC_BASE && addr <= N1G_INTC_BASE + 0x1ff) {
         n1g_dev_intc_write(s, addr - N1G_INTC_BASE, size, value);
     } else if (addr >= N1G_TIMER_BASE && addr <= N1G_TIMER_BASE + 0x17) {
@@ -259,6 +269,8 @@ void n1g_bus_write_core(n1g_state_t *s, n1g_core_t core, uint32_t addr, uint32_t
         n1g_dev_evp_write(s, addr - N1G_EVP_BASE, size, value);
     } else if (addr >= N1G_PPCON_BASE && addr <= N1G_PPCON_BASE + 0x1fff) {
         n1g_dev_ppcon_write(s, addr - N1G_PPCON_BASE, size, value);
+    } else if (addr >= N1G_SYSREG_70003800_BASE && addr < N1G_SYSREG_70003800_BASE + N1G_SYSREG_70003800_SIZE) {
+        n1g_dev_sysreg_70003800_write(s, addr - N1G_SYSREG_70003800_BASE, size, value);
     } else if (addr >= N1G_LCD2_BASE && addr <= N1G_LCD2_BASE + 0x1ff) {
         n1g_dev_lcd2_write(s, addr - N1G_LCD2_BASE, size, value);
     } else if (addr >= N1G_I2S_BASE && addr <= N1G_I2S_BASE + 0xff) {

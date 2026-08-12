@@ -165,7 +165,11 @@ time, and react correctly to charger, battery, hold, and alarm events.
 
 - [ ] Continue long Apple traces and determine whether the real LCD1 register
       bank at `0x70003000` is used after current menu coverage.
-- [ ] Identify the purpose of accesses around `0x70003800`.
+- [x] Route `0x70003800` and `0x60003000` as conservative latched register
+      banks so Apple's read-modify-write and suspend save/restore sequences
+      preserve state.
+- [ ] Identify the hardware purpose and side effects of the accesses around
+      `0x70003800` and `0x60003000`.
 - [ ] Route and model LCD1 if evidence shows that firmware relies on it.
 - [ ] Trace and implement LCD entry-mode, scan-direction, driver-output,
       start-line, and scroll commands that are currently ignored.
@@ -237,7 +241,9 @@ reasonable range of host speeds and instruction-slice settings.
 - [ ] Exercise every Apple top-level menu and settings page.
 - [ ] Test Music browsing, playback, shuffle, repeat, and now-playing screens.
 - [ ] Test Photos and photo transitions once storage decoding paths are ready.
-- [ ] Test Clock, alarms, stopwatch, calendar, contacts, and notes.
+- [x] Test the Clock list with a deterministic native navigation trace and
+      clean framebuffer/DMA diagnostics.
+- [ ] Test Clock editing, alarms, stopwatch, calendar, contacts, and notes.
 - [ ] Test bundled games and identify any new hardware assumptions.
 - [ ] Test settings changes followed by restart and disk reload.
 - [ ] Expand Rockbox plugin coverage beyond the currently verified plugins.

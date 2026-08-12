@@ -51,6 +51,7 @@ set(NANO1G_SOURCES
   src/dev_cachecon.c
   src/dev_evp.c
   src/dev_memcon.c
+  src/dev_sysregs.c
   src/dev_dma.c
   src/dev_gpio.c
   src/dev_i2c.c
@@ -262,6 +263,20 @@ if(BUILD_TESTING)
     endif()
   endif()
   add_test(NAME ppcon_unit COMMAND ppcon_unit)
+
+  add_executable(sysregs_unit
+    tests/test_sysregs.c
+    src/dev_sysregs.c
+  )
+  target_include_directories(sysregs_unit PRIVATE include "${UNICORN_INCLUDE_DIR}")
+  if(NANO1G_STRICT)
+    if(MSVC)
+      target_compile_options(sysregs_unit PRIVATE /W4)
+    else()
+      target_compile_options(sysregs_unit PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+  endif()
+  add_test(NAME sysregs_unit COMMAND sysregs_unit)
 
   add_executable(input_script_unit
     tests/test_input_script.c

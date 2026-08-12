@@ -177,6 +177,11 @@ typedef struct n1g_memcon {
     uint32_t regs[0x10000 / 4];
 } n1g_memcon_t;
 
+typedef struct n1g_sysregs {
+    uint32_t pp_60003000[N1G_SYSREG_60003000_SIZE / 4];
+    uint32_t periph_70003800[N1G_SYSREG_70003800_SIZE / 4];
+} n1g_sysregs_t;
+
 typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
     uint32_t secondary_regs[0x2000 / 4];
@@ -480,6 +485,7 @@ typedef struct n1g_state {
     n1g_cachecon_t cachecon;
     n1g_evp_t evp;
     n1g_memcon_t memcon;
+    n1g_sysregs_t sysregs;
     n1g_dma_t dma;
     n1g_gpio_t gpio;
     n1g_i2c_t i2c;

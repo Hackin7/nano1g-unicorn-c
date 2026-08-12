@@ -34,6 +34,11 @@ void n1g_dev_evp_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
 uint32_t n1g_dev_memcon_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_memcon_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 
+uint32_t n1g_dev_sysreg_60003000_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_sysreg_60003000_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+uint32_t n1g_dev_sysreg_70003800_read(n1g_state_t *s, uint32_t offset, uint32_t size);
+void n1g_dev_sysreg_70003800_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
+
 uint32_t n1g_dev_dma_read(n1g_state_t *s, uint32_t offset, uint32_t size);
 void n1g_dev_dma_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t value);
 uint32_t n1g_dev_dma_secondary_read(n1g_state_t *s, uint32_t offset, uint32_t size);
