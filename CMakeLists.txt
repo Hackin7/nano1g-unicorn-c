@@ -487,6 +487,14 @@ if(BUILD_TESTING)
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_clock_add.cmake)
     set_tests_properties(smoke_apple_clock_add PROPERTIES TIMEOUT 660 LABELS slow)
+    add_test(NAME smoke_apple_stopwatch
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_apple_stopwatch.cmake)
+    set_tests_properties(smoke_apple_stopwatch PROPERTIES TIMEOUT 780 LABELS slow)
     add_test(NAME smoke_apple_menu_stress
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>
