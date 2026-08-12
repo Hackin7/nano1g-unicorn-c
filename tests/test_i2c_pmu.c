@@ -14,6 +14,11 @@
 #define PCF_OOCC1 0x08u
 #define PCF_RTCSC 0x0au
 #define PCF_RTCMN 0x0bu
+#define PCF_RTCHR 0x0cu
+#define PCF_RTCWD 0x0du
+#define PCF_RTCDT 0x0eu
+#define PCF_RTCMT 0x0fu
+#define PCF_RTCYR 0x10u
 #define PCF_RTCSCA 0x11u
 #define PCF_RTCMNA 0x12u
 
@@ -103,6 +108,33 @@ int main(void) {
                          "RTC minutes did not advance") |
               expect_u32(pcf_read_byte(&s, PCF_INT1), 0x40u,
                          "periodic second status was not latched");
+
+    pcf_write_byte(&s, PCF_RTCSC, 0x58u);
+    pcf_write_byte(&s, PCF_RTCMN, 0x59u);
+    pcf_write_byte(&s, PCF_RTCHR, 0x23u);
+    pcf_write_byte(&s, PCF_RTCWD, 0x01u);
+    pcf_write_byte(&s, PCF_RTCDT, 0x28u);
+    pcf_write_byte(&s, PCF_RTCMT, 0x02u);
+    pcf_write_byte(&s, PCF_RTCYR, 0x28u);
+    pcf_write_byte(&s, PCF_RTCMNA, 0x42u);
+    s.counters.device_ticks += 2u;
+
+    n1g_pcf_backup_t backup;
+    n1g_dev_i2c_save_pcf(&s, &backup);
+    memset(&s, 0, sizeof(s));
+    s.opts.rtc_usec_per_tick = 1000000u;
+    n1g_dev_i2c_restore_pcf(&s, &backup);
+
+    failed |= expect_u32(pcf_read_byte(&s, PCF_RTCSC), 0x00u,
+                         "RTC seconds were not materialized across restart") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCMN), 0x00u,
+                         "RTC minutes were not preserved across restart") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCHR), 0x00u,
+                         "RTC hour was not preserved across restart") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCDT), 0x29u,
+                         "RTC leap-day rollover was not preserved") |
+              expect_u32(pcf_read_byte(&s, PCF_RTCMNA), 0x42u,
+                         "RTC alarm programming was not preserved");
 
     if (!failed) {
         puts("i2c pmu unit ok");

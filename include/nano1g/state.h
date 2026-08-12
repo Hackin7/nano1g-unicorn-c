@@ -238,6 +238,13 @@ typedef struct n1g_gpio {
     uint32_t regs[0xa00 / 4];
 } n1g_gpio_t;
 
+typedef struct n1g_pcf_backup {
+    uint8_t regs[0x40];
+    uint64_t written;
+    bool alarm_match_active;
+    bool valid;
+} n1g_pcf_backup_t;
+
 typedef struct n1g_i2c {
     uint32_t regs[0x100 / 4];
     uint64_t addr_reads[128];

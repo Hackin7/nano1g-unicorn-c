@@ -333,11 +333,16 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
     }
 
     uint32_t opto_front = s->opto.queue_len ? s->opto.queue[s->opto.queue_head] : 0u;
+    uint8_t rtc[7];
+    n1g_dev_i2c_get_rtc(s, rtc);
     char body[16384];
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
-                     "\"device_ticks\":%llu,\"rtc_usec_per_tick\":%u,\"lcd_words\":%llu,\"lcd_gram\":%llu,"
+                     "\"device_ticks\":%llu,\"rtc_usec_per_tick\":%u,"
+                     "\"rtc_bcd\":\"%02x-%02x-%02xT%02x:%02x:%02x\","
+                     "\"rtc_second_events\":%llu,\"rtc_alarm_events\":%llu,"
+                     "\"lcd_words\":%llu,\"lcd_gram\":%llu,"
                      "\"lcd_block\":%llu,\"lcd_overruns\":%llu,\"lcd_blocks\":%llu,"
                      "\"dma_lcd_transfers\":%llu,\"lcd_dma_accepts\":%llu,"
                      "\"lcd_dma_mismatches\":%llu,\"lcd_dma_descriptor_pixels\":%llu,"
@@ -381,6 +386,9 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      (unsigned long long)s->counters.guest_insns,
                      (unsigned long long)s->counters.device_ticks,
                      s->opts.rtc_usec_per_tick,
+                     rtc[6], rtc[5], rtc[4], rtc[2], rtc[1], rtc[0],
+                     (unsigned long long)s->i2c.rtc_second_interrupts,
+                     (unsigned long long)s->i2c.rtc_alarm_interrupts,
                      (unsigned long long)s->counters.lcd_words,
                      (unsigned long long)s->lcd2.gram_pixels,
                      (unsigned long long)s->lcd2.block_pixels,

@@ -132,7 +132,9 @@ stereo output with stable playback controls and no unbounded buffering.
 - [x] Model RTC/calendar progression, datasheet alarm-register reset values,
       periodic-second status, field-selective alarm matching, and read-to-clear
       alarm status.
-- [ ] Preserve RTC date/time across browser restarts and process restarts.
+- [x] Preserve the battery-backed PCF register bank, live RTC date/time, and
+      alarm programming across browser firmware/preset restarts.
+- [ ] Preserve RTC date/time across emulator process restarts.
 - [ ] Model sleep, wake, power-off, and wake-source transitions.
 - [x] Model the XMB RAM self-refresh request/status handshake used by Apple’s
       backlight timeout path, verify the post-startup 120-second native idle

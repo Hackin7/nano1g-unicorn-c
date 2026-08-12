@@ -35,6 +35,7 @@
 #define PCF50605_RTCYR 0x10u
 #define PCF50605_RTCSCA 0x11u
 #define PCF50605_RTCYRA 0x17u
+#define PCF50605_RTC_WRITTEN_MASK (0x7full << PCF50605_RTCSC)
 
 static const uint8_t pcf_alarm_reset[7] = {
     0x7fu, 0x7fu, 0x3fu, 0x07u, 0x3fu, 0x1fu, 0xffu
@@ -233,6 +234,30 @@ static uint8_t pcf_rtc_read(const n1g_state_t *s, uint8_t reg) {
     uint8_t fields[7];
     pcf_rtc_fields(s, fields);
     return fields[reg - PCF50605_RTCSC];
+}
+
+void n1g_dev_i2c_get_rtc(const n1g_state_t *s, uint8_t fields[7]) {
+    pcf_rtc_fields(s, fields);
+}
+
+void n1g_dev_i2c_save_pcf(const n1g_state_t *s, n1g_pcf_backup_t *backup) {
+    memset(backup, 0, sizeof(*backup));
+    memcpy(backup->regs, s->i2c.pcf_regs, sizeof(backup->regs));
+    pcf_rtc_fields(s, &backup->regs[PCF50605_RTCSC]);
+    backup->written = s->i2c.pcf_written | PCF50605_RTC_WRITTEN_MASK;
+    backup->alarm_match_active = s->i2c.rtc_alarm_match_active;
+    backup->valid = true;
+}
+
+void n1g_dev_i2c_restore_pcf(n1g_state_t *s, const n1g_pcf_backup_t *backup) {
+    if (!backup || !backup->valid) {
+        return;
+    }
+    memcpy(s->i2c.pcf_regs, backup->regs, sizeof(s->i2c.pcf_regs));
+    s->i2c.pcf_written = backup->written;
+    s->i2c.rtc_base_ticks = s->counters.device_ticks;
+    s->i2c.rtc_last_second = 0u;
+    s->i2c.rtc_alarm_match_active = backup->alarm_match_active;
 }
 
 static uint8_t pcf_read(n1g_state_t *s) {

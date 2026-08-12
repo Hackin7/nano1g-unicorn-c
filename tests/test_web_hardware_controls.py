@@ -7,6 +7,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 
 def free_port():
@@ -102,6 +103,7 @@ def main():
                 "main_charger": False,
                 "usb_charger": True,
                 "hold": False,
+                "rtc_usec_per_tick": 1,
             }:
                 raise RuntimeError(f"unexpected hardware response: {changed}")
 
@@ -123,6 +125,15 @@ def main():
             if final.get("battery_percent") != 37:
                 raise RuntimeError("invalid battery update changed live hardware state")
 
+            request(f"{base_url}/hardware?rtc_usec_per_tick=4096", deadline)
+            rtc_advanced = wait_status(
+                base_url,
+                lambda s: s.get("rtc_second_events", 0) >= 3,
+                deadline,
+                "accelerated PCF RTC progression",
+            )
+            rtc_before = datetime.strptime(rtc_advanced["rtc_bcd"], "%y-%m-%dT%H:%M:%S")
+
             request(f"{base_url}/control?restart=rockbox", deadline)
             restarted = wait_status(
                 base_url,
@@ -137,6 +148,12 @@ def main():
             )
             if restarted.get("preset") != "rockbox":
                 raise RuntimeError("browser restart selected the wrong preset")
+            rtc_after = datetime.strptime(restarted["rtc_bcd"], "%y-%m-%dT%H:%M:%S")
+            if rtc_after < rtc_before:
+                raise RuntimeError(
+                    f"battery-backed RTC moved backwards across restart: "
+                    f"{rtc_before} -> {rtc_after}"
+                )
         finally:
             process.terminate()
             try:

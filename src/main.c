@@ -727,12 +727,15 @@ run_image:
             break;
         }
         n1g_opts_t next = make_restart_opts(&s, restart_preset);
+        n1g_pcf_backup_t pcf_backup;
+        n1g_dev_i2c_save_pcf(&s, &pcf_backup);
         destroy_state(&s);
         state_active = false;
         if (!init_state(&s, next)) {
             exit_code = 1;
             break;
         }
+        n1g_dev_i2c_restore_pcf(&s, &pcf_backup);
         state_active = true;
     } while (!stop_requested);
 
@@ -1350,12 +1353,15 @@ run_image:
                     break;
                 }
                 n1g_opts_t next = make_restart_opts(&s, restart_preset);
+                n1g_pcf_backup_t pcf_backup;
+                n1g_dev_i2c_save_pcf(&s, &pcf_backup);
                 destroy_state(&s);
                 state_active = false;
                 if (!init_state(&s, next)) {
                     exit_code = 1;
                     break;
                 }
+                n1g_dev_i2c_restore_pcf(&s, &pcf_backup);
                 state_active = true;
                 goto run_image;
             }
