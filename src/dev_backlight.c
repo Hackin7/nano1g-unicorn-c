@@ -1,6 +1,7 @@
 #include "nano1g/devices.h"
 
 #define PWM_BACKLIGHT_OFFSET 0x10u
+#define PWM_CLICKER_OFFSET   0x00u
 #define PWM_ENABLE           0x80000000u
 
 #define DIMMER_CONFIG        0x00u
@@ -50,7 +51,28 @@ void n1g_dev_pwm_write(n1g_state_t *s, uint32_t offset, uint32_t size, uint32_t 
     uint32_t *reg = &s->backlight.pwm_regs[aligned / 4u];
     uint32_t old_value = *reg;
     *reg = merge_write(*reg, offset, size, value);
-    if (aligned == PWM_BACKLIGHT_OFFSET) {
+    if (aligned == PWM_CLICKER_OFFSET) {
+        bool old_enabled = (old_value & PWM_ENABLE) != 0u &&
+                           ((old_value >> 16u) & 0xffu) != 0u;
+        bool enabled = (*reg & PWM_ENABLE) != 0u &&
+                       ((*reg >> 16u) & 0xffu) != 0u;
+        s->backlight.clicker_writes++;
+        uint16_t period = (uint16_t)(*reg & 0xffffu);
+        uint8_t duty = (uint8_t)((*reg >> 16u) & 0xffu);
+        if (period != 0u || duty != 0u) {
+            s->backlight.clicker_period = period;
+            s->backlight.clicker_duty = duty;
+        }
+        s->backlight.clicker_enabled = enabled;
+        if (!old_enabled && enabled) {
+            s->backlight.clicker_starts++;
+            s->backlight.clicker_start_tick = s->counters.device_ticks;
+        } else if (old_enabled && !enabled) {
+            s->backlight.clicker_stops++;
+            s->backlight.clicker_last_duration_ticks =
+                s->counters.device_ticks - s->backlight.clicker_start_tick;
+        }
+    } else if (aligned == PWM_BACKLIGHT_OFFSET) {
         s->backlight.pwm_seen = true;
         if (old_value != *reg) {
             s->backlight.generation++;

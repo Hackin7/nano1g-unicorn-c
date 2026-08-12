@@ -211,8 +211,27 @@ def seek_row(base_url, direction, row, expected_title, limit, deadline, descript
             current_title == expected_title
             and center is not None
             and abs(center - expected_center) <= 2
+            and status.get("opto_queue", 0) == 0
         ):
-            return status
+            confirmed = wait_ticks(
+                base_url,
+                status.get("device_ticks", 0),
+                50_000,
+                deadline,
+            )
+            _, confirmed_title, confirmed_center = screen_state(
+                base_url, confirmed, deadline
+            )
+            if (
+                confirmed_title == expected_title
+                and confirmed_center is not None
+                and abs(confirmed_center - expected_center) <= 2
+                and confirmed.get("opto_queue", 0) == 0
+            ):
+                return confirmed
+            status = confirmed
+            current_title = confirmed_title
+            center = confirmed_center
         observed.append((current_title, center))
         if step == limit:
             break
@@ -296,6 +315,7 @@ def stable_repeat_frame(base_url, status, deadline):
             current_title == SETTINGS_TITLE_HASH
             and center is not None
             and abs(center - (27 + 3 * 19)) <= 2
+            and status.get("opto_queue", 0) == 0
         ):
             current_hash = repeat_value_hash_from_frame(frame)
             if current_hash == previous_hash:
@@ -306,7 +326,7 @@ def stable_repeat_frame(base_url, status, deadline):
         status = wait_ticks(
             base_url,
             status.get("device_ticks", 0),
-            5_000,
+            50_000,
             deadline,
         )
     raise RuntimeError("timed out waiting for a stable Settings > Repeat frame")
@@ -376,6 +396,15 @@ def main():
                 repeat_one.get("device_ticks", 0),
                 50_000,
                 deadline,
+            )
+            repeat_one = seek_row(
+                base_url,
+                "down",
+                3,
+                SETTINGS_TITLE_HASH,
+                20,
+                deadline,
+                "Settings > Repeat after toggle",
             )
             repeat_one, repeat_one_frame, one_hash = stable_repeat_frame(
                 base_url, repeat_one, deadline

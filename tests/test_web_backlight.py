@@ -75,6 +75,12 @@ def main():
                 lambda s: s.get("backlight_mode") == "pwm"
                 and s.get("backlight_on") is True
                 and s.get("backlight_level") == 32
+                and s.get("clicker_on") is False
+                and s.get("clicker_period") == 20
+                and s.get("clicker_duty") == 0x80
+                and s.get("clicker_starts") == 1
+                and s.get("clicker_stops") == 1
+                and s.get("clicker_last_ticks", 0) > 0
                 and s.get("lcd_words", 0) >= 64,
                 deadline,
                 "guest PWM backlight and LCD frame",
@@ -122,7 +128,7 @@ def main():
                 process.kill()
                 process.wait(timeout=5.0)
 
-    print("web backlight: guest PWM status, frame sequencing, lit RGBA, and raw RGBA ok")
+    print("web PWM: backlight frames, raw RGBA, and piezo events ok")
 
 
 if __name__ == "__main__":

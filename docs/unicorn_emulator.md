@@ -57,6 +57,10 @@ raises PP502x GPIO IRQ 32, and suppresses optical-wheel packets while engaged.
 The displayed LCD also follows guest backlight hardware: Rockbox-style PWM and
 Apple’s Nano pulse dimmer/GPIOL power gate update the status feed, invalidate
 the browser frame, and scale the rendered native framebuffer.
+PWM channel 0 is tracked separately as the piezo clicker: its enable, duty,
+period, duration, and start/stop edges are exposed in `status.json`. When Audio
+is enabled, completed PWM pulses are reproduced using the hardware clock and
+remain separate from the WM8975/I2S stream.
 
 `--disk-out` is optional. With it, the emulator saves guest writes before a
 browser Restart and at clean exit, then reloads that mutable image when the
@@ -115,6 +119,7 @@ settle waits. `--hold-switch` starts the emulator with Hold engaged.
 - Guest-controlled PWM/Nano backlight power and intensity, including Apple’s
   native timeout-off and input-wake cycle through the XMB self-refresh
   handshake.
+- Native piezo clicker PWM control and host-visible start/stop events.
 - Deterministic scripted input through `--input`.
 - Plugin browsing and native plugin loading from `.rockbox/rocks/`.
 - Calculator plugin launch, with `build-mingw/calculator.bmp` captured during
@@ -159,8 +164,8 @@ immediate down/up requests.
   does not claim a stock reset-vector cold boot.
 - Apple Play-hold reaches the native `kP&H` responder and an interpreted
   122-byte callable at runtime `0x3265bc`. In current traces it does not call
-  the Preferences writer or write `OOCC1`, so shutdown and persistence remain
-  under investigation; the emulator does not synthesize either action.
+  the Preferences writer or write `OOCC1`, so shutdown remains under
+  investigation; the emulator does not synthesize that action.
 - Changing an Apple setting reaches the Preferences dirty setter at runtime
   `0x2d408`. Play-hold is not the idle/save trigger: the power manager's
   `+0x48` timer reaches runtime `0x12c34c` after 120 seconds, while runtime
@@ -169,5 +174,7 @@ immediate down/up requests.
   work. With an accelerated RTC, 33 built-in `Resources/TrainerTemplates`
   entries can still be loading when the first timeout fires; after startup
   settles, native input rearms the timer, Apple turns the backlight off, and a
-  native button IRQ wakes it. Shutdown and Preferences persistence remain
-  separate investigations, and the emulator does not synthesize either.
+  native button IRQ wakes it. A separate native regression changes Repeat,
+  waits for Apple's Preferences writer and ATA updates, restarts from the
+  mutable snapshot, and verifies the saved value after boot. Shutdown remains
+  a separate investigation and is not synthesized by the emulator.

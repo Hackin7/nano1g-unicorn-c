@@ -91,7 +91,7 @@ static const char index_html[] =
 "const audio_enable=document.getElementById('audio-enable');"
 "const battery_level=document.getElementById('battery-level'),battery_value=document.getElementById('battery-value'),main_charger=document.getElementById('main-charger'),usb_charger=document.getElementById('usb-charger'),hold_switch=document.getElementById('hold-switch');"
 "const ipod=document.getElementById('ipod-container');"
-"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,hardware_timer=null,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_rate=0,audio_stream=-1,audio_polling=false,audio_sources=new Set();"
+"let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,hardware_timer=null,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_rate=0,audio_stream=-1,audio_polling=false,audio_sources=new Set(),clicker_seen=false,clicker_stops=0;"
 "function set_status(message){status_el.textContent=message;}"
 "function text(id,value){document.getElementById(id).textContent=value;}"
 "async function send_input(url){try{await fetch(url,{cache:'no-store'});}catch(e){set_status('Input failed: '+e.message);}}"
@@ -124,11 +124,12 @@ static const char index_html[] =
 "document.body.addEventListener('mousewheel',e=>{e.preventDefault();wheel_step(e.deltaY);},{passive:false});"
 "function read_u64(v,o){return v.getUint32(o,true)+v.getUint32(o+4,true)*4294967296;}"
 "function reset_audio_queue(){for(const src of audio_sources){try{src.stop();}catch(e){}}audio_sources.clear();if(audio_ctx)audio_next=audio_ctx.currentTime+.04;}"
+"function play_clicker(period,duty,duration_ticks,rtc_scale,count){if(!audio_enable.checked||!audio_ctx||!count)return;const hz=93750/(period+1),duration=Math.min(1,Math.max(.001,duration_ticks*rtc_scale/1000000)),gain=Math.max(.01,.06*duty/255),limit=Math.min(count,8);for(let i=0;i<limit;i++){const when=audio_ctx.currentTime+.01+i*(duration+.003),osc=audio_ctx.createOscillator(),amp=audio_ctx.createGain();osc.type='square';osc.frequency.setValueAtTime(hz,when);amp.gain.setValueAtTime(gain,when);amp.gain.setValueAtTime(0,when+duration);osc.connect(amp);amp.connect(audio_ctx.destination);osc.onended=()=>{osc.disconnect();amp.disconnect();};osc.start(when);osc.stop(when+duration+.001);}}"
 "async function pump_audio(){if(!audio_enable.checked||!audio_ctx||audio_polling||audio_next-audio_ctx.currentTime>.2)return;audio_polling=true;try{const requested=Math.floor(audio_cursor),r=await fetch('/audio.pcm?cursor='+requested,{cache:'no-store'}),b=await r.arrayBuffer();if(b.byteLength<32)return;const v=new DataView(b);if(v.getUint32(0,true)!==0x3141314e)return;const rate=v.getUint32(4,true),start=read_u64(v,8),next=read_u64(v,16),count=v.getUint32(24,true),stream=v.getUint32(28,true)>>>1;if(stream!==audio_stream||rate!==audio_rate||start!==requested){reset_audio_queue();audio_stream=stream;audio_rate=rate;}audio_cursor=next;if(count<2||b.byteLength<32+count*2)return;const frames=Math.floor(count/2),ab=audio_ctx.createBuffer(2,frames,rate),l=ab.getChannelData(0),rr=ab.getChannelData(1),pcm=new DataView(b,32);for(let i=0;i<frames;i++){l[i]=pcm.getInt16(i*4,true)/32768;rr[i]=pcm.getInt16(i*4+2,true)/32768;}const src=audio_ctx.createBufferSource();src.buffer=ab;src.connect(audio_ctx.destination);src.onended=()=>audio_sources.delete(src);audio_sources.add(src);let when=Math.max(audio_ctx.currentTime+.03,audio_next);if(when>audio_ctx.currentTime+.25)when=audio_ctx.currentTime+.03;src.start(when);audio_next=when+frames/rate;}catch(e){set_status('Audio failed: '+e.message);}finally{audio_polling=false;}}"
 "audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;reset_audio_queue();if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else{if(audio_timer)clearInterval(audio_timer);audio_timer=null;reset_audio_queue();if(audio_ctx)await audio_ctx.suspend();}};"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('light',(s.backlight_on?'on ':'off ')+s.backlight_level+'/32');text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('light',(s.backlight_on?'on ':'off ')+s.backlight_level+'/32');text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;if(!clicker_seen){clicker_stops=s.clicker_stops;clicker_seen=true;}else if(s.clicker_stops>clicker_stops){play_clicker(s.clicker_period,s.clicker_duty,s.clicker_last_ticks,s.rtc_usec_per_tick,s.clicker_stops-clicker_stops);clicker_stops=s.clicker_stops;}"
 "if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -351,6 +352,8 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"battery_percent\":%u,\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,"
                      "\"backlight_on\":%s,\"backlight_level\":%u,\"backlight_mode\":\"%s\","
                      "\"backlight_pwm\":\"0x%08x\",\"backlight_pulses\":%llu,"
+                     "\"clicker_on\":%s,\"clicker_period\":%u,\"clicker_duty\":%u,"
+                     "\"clicker_writes\":%llu,\"clicker_starts\":%llu,\"clicker_stops\":%llu,\"clicker_last_ticks\":%llu,"
                      "\"opto_queue\":%u,\"opto_front\":\"0x%08x\","
                      "\"opto_buttons\":\"0x%08x\",\"opto_regs04\":\"0x%08x\","
                      "\"intc_cpu\":\"0x%08x/0x%08x\",\"intc_hi_cpu\":\"0x%08x/0x%08x\","
@@ -436,6 +439,13 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      n1g_dev_backlight_mode(s),
                      s->backlight.pwm_regs[0x10u / 4u],
                      (unsigned long long)s->backlight.dimmer_pulses,
+                     s->backlight.clicker_enabled ? "true" : "false",
+                     (unsigned)s->backlight.clicker_period,
+                     (unsigned)s->backlight.clicker_duty,
+                     (unsigned long long)s->backlight.clicker_writes,
+                     (unsigned long long)s->backlight.clicker_starts,
+                     (unsigned long long)s->backlight.clicker_stops,
+                     (unsigned long long)s->backlight.clicker_last_duration_ticks,
                      (unsigned)s->opto.queue_len,
                      opto_front,
                      s->opto.button_bits,

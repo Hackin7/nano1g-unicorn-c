@@ -20,6 +20,12 @@ fill_loop:
     ldr r1, =0x010000fc
     str r1, [r0]
 
+    ldr r7, =0x7000a000
+    ldr r8, =0x80800014
+    str r8, [r7]
+    mov r8, #0
+    str r8, [r7]
+
     ldr r4, =0x6000d13c
     ldr r5, =0x7000a010
     mvn r6, #0

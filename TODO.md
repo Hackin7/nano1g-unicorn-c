@@ -90,10 +90,12 @@ HDD images do not contain a stock Nano 1G reset-vector NOR dump.
 - [x] Make browser-launched sessions optionally persist disk changes through a
       clearly selected `--disk-out` image.
 - [x] Ensure source fixtures remain read-only by default.
-- [ ] Verify settings and preferences survive an emulator restart.
+- [x] Verify a native Apple Repeat preference write survives an emulator
+      restart and renders the saved value from the mutable disk snapshot.
 - [x] Verify the Apple firmware reads the seeded iTunesDB and media files.
 - [ ] Verify playlists, tracks, metadata, seeking, and play counts.
-- [ ] Verify database and preference updates survive a disk snapshot reload.
+- [x] Verify preference updates survive a disk snapshot reload.
+- [ ] Verify iTunesDB and play-count updates survive a disk snapshot reload.
 - [x] Reject initial and boundary-crossing PIO/DMA requests beyond IDENTIFY
       capacity with IDNF and failing-LBA taskfile state.
 - [ ] Add corrupt-sector and media-error injection tests.
@@ -136,7 +138,8 @@ stereo output with stable playback controls and no unbounded buffering.
       Apple lock-icon rendering, and button/wheel suppression.
 - [x] Model PP502x PWM and Nano pulse-dimmer backlight state, GPIOL power,
       browser intensity, status reporting, and frame invalidation.
-- [ ] Model clicker output or expose it as a host event.
+- [x] Decode PWM channel 0 piezo enable, duty, and period and expose native
+      clicker start/stop events through diagnostics and `status.json`.
 - [x] Add browser controls for live battery, main/USB charger, and Hold state
       without embedding firmware policy in the frontend.
 - [ ] Add a browser control for wake events once sleep/wake transitions exist.

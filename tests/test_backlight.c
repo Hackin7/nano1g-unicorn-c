@@ -26,6 +26,26 @@ int main(void) {
                  expect_true(n1g_dev_backlight_level(&s) == 32u,
                              "unconfigured backlight did not default to full brightness");
 
+    n1g_dev_pwm_write(&s, 0x00u, 4u, 0x80800014u);
+    failed |= expect_true(n1g_dev_pwm_read(&s, 0x00u, 4u) == 0x80800014u,
+                          "PWM channel 0 did not latch its piezo control word") |
+              expect_true(s.backlight.clicker_enabled &&
+                          s.backlight.clicker_period == 20u &&
+                          s.backlight.clicker_duty == 0x80u,
+                          "piezo control fields were decoded incorrectly") |
+              expect_true(s.backlight.clicker_writes == 1u &&
+                          s.backlight.clicker_starts == 1u &&
+                          s.backlight.clicker_stops == 0u,
+                          "piezo start event was not counted");
+    s.counters.device_ticks = 17u;
+    n1g_dev_pwm_write(&s, 0x00u, 4u, 0u);
+    failed |= expect_true(!s.backlight.clicker_enabled &&
+                          s.backlight.clicker_stops == 1u &&
+                          s.backlight.clicker_period == 20u &&
+                          s.backlight.clicker_duty == 0x80u &&
+                          s.backlight.clicker_last_duration_ticks == 17u,
+                          "piezo stop event was not counted");
+
     n1g_dev_pwm_write(&s, 0x10u, 4u, 0x80140000u);
     failed |= expect_true(strcmp(n1g_dev_backlight_mode(&s), "pwm") == 0,
                           "PWM write did not select PWM backlight mode") |

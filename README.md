@@ -253,6 +253,10 @@ Implemented foundation:
 - PP502x PWM channel 1 and the Nano channel-8 pulse dimmer, including Apple’s
   GPIOL bit-7 backlight power gate. The browser status feed and rendered frame
   reflect guest-selected power and brightness.
+- PP502x PWM channel 0 decodes the Nano piezo enable, duty, and period fields;
+  native clicker start/stop edges are available in the run summary and web
+  status feed. The opt-in browser audio path recreates completed PWM pulses at
+  the firmware-selected pitch without mixing them into codec DMA.
 - XMB RAM self-refresh request/status behavior at `0x7000003c`, allowing
   Apple’s low-power transition routine to complete instead of spinning in its
   copied fast-RAM wait loop.
@@ -331,6 +335,9 @@ Implemented foundation:
   holds BSY while asserted, restores the ATA reset signature after release,
   clears multiple mode, and does not raise an interrupt. A native ARM probe
   verifies the transition and signature.
+- Native Apple Preferences persistence is verified end to end: the firmware
+  changes Repeat, executes its own writer and ATA sector updates, restarts from
+  the mutable `--disk-out` snapshot, and renders the saved value after boot.
 - PIO and DMA requests are bounded by the capacity reported in IDENTIFY words
   60-61. Transfers that begin beyond the medium or cross its final sector stop
   with IDNF and an IRQ, while the taskfile LBA/count identify the first failing

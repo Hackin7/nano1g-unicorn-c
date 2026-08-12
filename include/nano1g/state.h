@@ -293,8 +293,16 @@ typedef struct n1g_backlight {
     uint64_t dimmer_pulses;
     uint64_t dimmer_up_pulses;
     uint64_t dimmer_down_pulses;
+    uint64_t clicker_writes;
+    uint64_t clicker_starts;
+    uint64_t clicker_stops;
+    uint64_t clicker_start_tick;
+    uint64_t clicker_last_duration_ticks;
+    uint16_t clicker_period;
+    uint8_t clicker_duty;
     uint8_t nano_level;
     uint8_t dimmer_busy_reads;
+    bool clicker_enabled;
     bool pwm_seen;
     bool dimmer_seen;
     bool nano_power_seen;

@@ -792,7 +792,7 @@ run_image:
              (unsigned long long)s.i2s.tx_overruns,
              (unsigned long long)s.i2s.host_dropped_halfwords);
     n1g_info(&s,
-             "backlight mode=%s on=%u level=%u pwm=0x%08x pulses=%llu up=%llu down=%llu gpio_l=0x%08x",
+             "backlight mode=%s on=%u level=%u pwm=0x%08x pulses=%llu up=%llu down=%llu gpio_l=0x%08x clicker=0x%08x active=%u period=%u duty=%u writes=%llu starts=%llu stops=%llu last_ticks=%llu",
              n1g_dev_backlight_mode(&s),
              n1g_dev_backlight_powered(&s) ? 1u : 0u,
              n1g_dev_backlight_level(&s),
@@ -800,7 +800,15 @@ run_image:
              (unsigned long long)s.backlight.dimmer_pulses,
              (unsigned long long)s.backlight.dimmer_up_pulses,
              (unsigned long long)s.backlight.dimmer_down_pulses,
-             s.gpio.regs[0x12cu / 4u]);
+             s.gpio.regs[0x12cu / 4u],
+             s.backlight.pwm_regs[0],
+             s.backlight.clicker_enabled ? 1u : 0u,
+             (unsigned)s.backlight.clicker_period,
+             (unsigned)s.backlight.clicker_duty,
+             (unsigned long long)s.backlight.clicker_writes,
+             (unsigned long long)s.backlight.clicker_starts,
+             (unsigned long long)s.backlight.clicker_stops,
+             (unsigned long long)s.backlight.clicker_last_duration_ticks);
     if (s.i2c.addr_reads[0x08u] != 0u || s.i2c.addr_writes[0x08u] != 0u) {
         n1g_info(&s,
                  "pcf50605_state reads=%llu writes=%llu oocs=0x%02x int=0x%02x/0x%02x/0x%02x masks=0x%02x/0x%02x/0x%02x oocc1=0x%02x oocc1_writes=%llu standby_requests=%llu",
