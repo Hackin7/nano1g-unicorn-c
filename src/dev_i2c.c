@@ -168,26 +168,16 @@ static uint32_t bcd2dec(uint8_t v) {
     return ((uint32_t)(v >> 4) * 10u) + (v & 0x0fu);
 }
 
-/* PCF50605 RTC (regs 0x0a..0x10, BCD): a base date/time plus elapsed guest
- * seconds, so the Rockbox status-bar clock actually ticks. The default base
- * is 2026-01-01 12:00:00 (Thursday); a guest rtc_write_datetime replaces the
- * base and elapsed time restarts from that write. */
-static void pcf_rtc_fields(const n1g_state_t *s, uint8_t fields[7]) {
+static void pcf_rtc_advance_fields(uint8_t fields[7], uint64_t elapsed) {
     static const uint8_t days_in_month[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    uint32_t sec = 0, min = 0, hour = 12, wday = 4, mday = 1, mon = 1, year = 26;
+    uint64_t sec = bcd2dec(fields[0]);
+    uint64_t min = bcd2dec(fields[1]);
+    uint64_t hour = bcd2dec(fields[2]);
+    uint32_t wday = bcd2dec(fields[3]);
+    uint32_t mday = bcd2dec(fields[4]);
+    uint32_t mon = bcd2dec(fields[5]);
+    uint32_t year = bcd2dec(fields[6]);
 
-    bool guest_set = (s->i2c.pcf_written & (1ull << 0x0a)) != 0;
-    uint64_t base_ticks = 0;
-    if (guest_set) {
-        sec = bcd2dec(s->i2c.pcf_regs[0x0a]);
-        min = bcd2dec(s->i2c.pcf_regs[0x0b]);
-        hour = bcd2dec(s->i2c.pcf_regs[0x0c]);
-        wday = bcd2dec(s->i2c.pcf_regs[0x0d]);
-        mday = bcd2dec(s->i2c.pcf_regs[0x0e]);
-        mon = bcd2dec(s->i2c.pcf_regs[0x0f]);
-        year = bcd2dec(s->i2c.pcf_regs[0x10]);
-        base_ticks = s->i2c.rtc_base_ticks;
-    }
     if (mon == 0) {
         mon = 1;
     }
@@ -195,19 +185,17 @@ static void pcf_rtc_fields(const n1g_state_t *s, uint8_t fields[7]) {
         mday = 1;
     }
 
-    uint64_t elapsed =
-        (s->counters.device_ticks - base_ticks) * s->opts.rtc_usec_per_tick / 1000000ull;
-    sec += (uint32_t)(elapsed % 60u);
+    sec += elapsed % 60u;
     min += sec / 60u;
     sec %= 60u;
-    min += (uint32_t)((elapsed / 60u) % 60u);
+    min += (elapsed / 60u) % 60u;
     hour += min / 60u;
     min %= 60u;
-    hour += (uint32_t)((elapsed / 3600u) % 24u);
-    uint32_t days = (uint32_t)(elapsed / 86400u) + hour / 24u;
+    hour += (elapsed / 3600u) % 24u;
+    uint64_t days = elapsed / 86400u + hour / 24u;
     hour %= 24u;
-    wday = (wday + days) % 7u;
-    for (uint32_t i = 0; i < days; i++) {
+    wday = (uint32_t)((wday + days) % 7u);
+    for (uint64_t i = 0; i < days; i++) {
         uint32_t dim = days_in_month[(mon - 1u) % 12u];
         if (mon == 2u && ((2000u + year) % 4u) == 0u) {
             dim = 29u;
@@ -230,6 +218,27 @@ static void pcf_rtc_fields(const n1g_state_t *s, uint8_t fields[7]) {
     fields[6] = dec2bcd(year);
 }
 
+/* PCF50605 RTC (regs 0x0a..0x10, BCD): a base date/time plus elapsed guest
+ * seconds, so the Rockbox status-bar clock actually ticks. The default base
+ * is 2026-01-01 12:00:00 (Thursday); a guest rtc_write_datetime replaces the
+ * base and elapsed time restarts from that write. */
+static void pcf_rtc_fields(const n1g_state_t *s, uint8_t fields[7]) {
+    static const uint8_t default_rtc[7] = {
+        0x00u, 0x00u, 0x12u, 0x04u, 0x01u, 0x01u, 0x26u
+    };
+    bool guest_set = (s->i2c.pcf_written & (1ull << PCF50605_RTCSC)) != 0u;
+    uint64_t base_ticks = 0u;
+    if (guest_set) {
+        memcpy(fields, &s->i2c.pcf_regs[PCF50605_RTCSC], 7u);
+        base_ticks = s->i2c.rtc_base_ticks;
+    } else {
+        memcpy(fields, default_rtc, sizeof(default_rtc));
+    }
+    uint64_t elapsed =
+        (s->counters.device_ticks - base_ticks) * s->opts.rtc_usec_per_tick / 1000000ull;
+    pcf_rtc_advance_fields(fields, elapsed);
+}
+
 static uint8_t pcf_rtc_read(const n1g_state_t *s, uint8_t reg) {
     uint8_t fields[7];
     pcf_rtc_fields(s, fields);
@@ -238,6 +247,17 @@ static uint8_t pcf_rtc_read(const n1g_state_t *s, uint8_t reg) {
 
 void n1g_dev_i2c_get_rtc(const n1g_state_t *s, uint8_t fields[7]) {
     pcf_rtc_fields(s, fields);
+}
+
+void n1g_dev_i2c_advance_rtc(n1g_state_t *s, uint64_t seconds) {
+    uint8_t fields[7];
+    pcf_rtc_fields(s, fields);
+    pcf_rtc_advance_fields(fields, seconds);
+    memcpy(&s->i2c.pcf_regs[PCF50605_RTCSC], fields, sizeof(fields));
+    s->i2c.pcf_written |= PCF50605_RTC_WRITTEN_MASK;
+    s->i2c.rtc_base_ticks = s->counters.device_ticks;
+    s->i2c.rtc_last_second = 0u;
+    s->i2c.rtc_alarm_match_active = false;
 }
 
 void n1g_dev_i2c_save_pcf(const n1g_state_t *s, n1g_pcf_backup_t *backup) {

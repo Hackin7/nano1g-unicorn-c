@@ -130,6 +130,11 @@ Useful options:
   `--slice-insns` values, set this near the slice size so guest delay loops and
   bootloader menu timeouts still make progress without returning to
   `--slice-insns 1`.
+- `--pcf-state PATH`: persist the battery-backed PCF50605 register bank, RTC,
+  and alarm programming in a versioned state file. On the next emulator
+  process launch, the RTC advances by the host time elapsed while the emulator
+  was stopped. Writes use a temporary file followed by replacement so a
+  partial save does not destroy the previous state.
 - `--ram-fill-zero`: initialize guest RAM with zeroes instead of the default
   diagnostic `0x2d` pattern. This is only a reset-state experiment knob; it
   does not seed Apple boot metadata or firmware-owned structures.
@@ -346,7 +351,9 @@ Implemented foundation:
 - DMA-to-LCD2 transfers route through the modeled LCD2 register window and are
   covered by a native ARM smoke that produces real PPM pixels.
 - The I2C/PMU path models basic PCF register pointer, default reads, guest
-  writes, busy polling, and readback through native MMIO transactions.
+  writes, busy polling, and readback through native MMIO transactions. RTC and
+  alarm state survive browser firmware restarts, while `--pcf-state` extends
+  that battery-backed behavior across emulator process restarts.
 - Basic NOR read-array, software-ID, status, CFI, program, and block erase
   commands are modeled for boot ROM probing. The software-ID response now uses
   the SST39WF800A-style `0x00bf/0x273f` identity that appears in AUPD's native

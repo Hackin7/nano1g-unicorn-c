@@ -113,6 +113,9 @@ settle waits. `--hold-switch` starts the emulator with Hold engaged.
 - PCF50605 interrupt status is read-only and read-to-clear, interrupt masks
   retain guest writes, and `OOCC1.GOSTDBY` requests are counted. Both direct
   device and guest-I2C regressions cover these semantics.
+- PCF50605 RTC/calendar and field-selective alarm matching, with battery-domain
+  continuity across browser restarts and optional process-level persistence
+  through `--pcf-state PATH`.
 - ATA Device Control software reset aborts active transfers, holds BSY until a
   device tick after release, restores the reset signature, and clears multiple
   mode without raising an IRQ.

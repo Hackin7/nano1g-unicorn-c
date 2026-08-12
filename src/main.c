@@ -9,16 +9,16 @@
 #include "nano1g/trace.h"
 #include "nano1g/web_frontend.h"
 
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#else
-#include <time.h>
 #endif
 
 static volatile sig_atomic_t stop_requested;
@@ -119,7 +119,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset);
 
 static void usage(void) {
     puts("nano1g [--run rockbox|ipodlinux|apple-stage0|apple-direct|apple-official|apple-flash]");
-    puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--disk-out PATH] [--ppm PATH]");
+    puts("       [--profile apple|rockbox] [--firmware PATH] [--flash-rom PATH] [--disk PATH] [--disk-out PATH]");
+    puts("       [--pcf-state PATH] [--ppm PATH]");
     puts("       [--max-insns N] [--slice-insns N] [--timer-divider N] [--rtc-usec-per-tick N]");
     puts("       [--load-addr ADDR] [--entry ADDR]");
     puts("       [--dump32 ADDR] [--dump-count N]");
@@ -185,6 +186,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.disk_path = argv[++i];
         } else if (strcmp(a, "--disk-out") == 0 && i + 1 < argc) {
             opts.disk_out_path = argv[++i];
+        } else if (strcmp(a, "--pcf-state") == 0 && i + 1 < argc) {
+            opts.pcf_state_path = argv[++i];
         } else if (strcmp(a, "--ppm") == 0 && i + 1 < argc) {
             opts.ppm_path = argv[++i];
         } else if (strcmp(a, "--max-insns") == 0 && i + 1 < argc) {
@@ -332,6 +335,118 @@ static bool save_disk_output(n1g_state_t *s) {
     return true;
 }
 
+#define N1G_PCF_STATE_SIZE 89u
+
+static void put_u64le(uint8_t *dst, uint64_t value) {
+    for (unsigned i = 0; i < 8u; i++) {
+        dst[i] = (uint8_t)(value >> (i * 8u));
+    }
+}
+
+static uint64_t get_u64le(const uint8_t *src) {
+    uint64_t value = 0u;
+    for (unsigned i = 0; i < 8u; i++) {
+        value |= (uint64_t)src[i] << (i * 8u);
+    }
+    return value;
+}
+
+static uint64_t wall_clock_seconds(void) {
+    time_t now = time(NULL);
+    return now > 0 ? (uint64_t)now : 0u;
+}
+
+static bool save_pcf_state(n1g_state_t *s) {
+    if (!s->opts.pcf_state_path) {
+        return true;
+    }
+
+    static const uint8_t magic[8] = {'N', '1', 'G', 'P', 'C', 'F', '1', 0};
+    uint8_t data[N1G_PCF_STATE_SIZE];
+    n1g_pcf_backup_t backup;
+    n1g_dev_i2c_save_pcf(s, &backup);
+    memcpy(data, magic, sizeof(magic));
+    put_u64le(&data[8], wall_clock_seconds());
+    put_u64le(&data[16], backup.written);
+    data[24] = backup.alarm_match_active ? 1u : 0u;
+    memcpy(&data[25], backup.regs, sizeof(backup.regs));
+
+    size_t path_len = strlen(s->opts.pcf_state_path);
+    char *tmp_path = malloc(path_len + 5u);
+    if (!tmp_path) {
+        n1g_info(s, "failed to allocate PCF state path");
+        return false;
+    }
+    snprintf(tmp_path, path_len + 5u, "%s.tmp", s->opts.pcf_state_path);
+
+    FILE *f = fopen(tmp_path, "wb");
+    if (!f) {
+        n1g_info(s, "failed to open PCF state output %s", s->opts.pcf_state_path);
+        free(tmp_path);
+        return false;
+    }
+    bool ok = fwrite(data, 1u, sizeof(data), f) == sizeof(data);
+    if (fclose(f) != 0) {
+        ok = false;
+    }
+    if (ok) {
+#if defined(_WIN32)
+        ok = MoveFileExA(tmp_path, s->opts.pcf_state_path,
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        ok = rename(tmp_path, s->opts.pcf_state_path) == 0;
+#endif
+    }
+    if (!ok) {
+        (void)remove(tmp_path);
+        n1g_info(s, "failed to save PCF state %s", s->opts.pcf_state_path);
+    }
+    free(tmp_path);
+    return ok;
+}
+
+static bool load_pcf_state(n1g_state_t *s) {
+    if (!s->opts.pcf_state_path) {
+        return true;
+    }
+
+    FILE *f = fopen(s->opts.pcf_state_path, "rb");
+    if (!f) {
+        if (errno == ENOENT) {
+            return true;
+        }
+        n1g_info(s, "failed to open PCF state %s", s->opts.pcf_state_path);
+        return false;
+    }
+
+    static const uint8_t magic[8] = {'N', '1', 'G', 'P', 'C', 'F', '1', 0};
+    uint8_t data[N1G_PCF_STATE_SIZE];
+    size_t count = fread(data, 1u, sizeof(data), f);
+    int trailing = fgetc(f);
+    bool close_ok = fclose(f) == 0;
+    if (count != sizeof(data) || trailing != EOF || !close_ok ||
+        memcmp(data, magic, sizeof(magic)) != 0) {
+        n1g_info(s, "invalid PCF state %s", s->opts.pcf_state_path);
+        return false;
+    }
+
+    n1g_pcf_backup_t backup;
+    memset(&backup, 0, sizeof(backup));
+    backup.written = get_u64le(&data[16]);
+    backup.alarm_match_active = data[24] != 0u;
+    memcpy(backup.regs, &data[25], sizeof(backup.regs));
+    backup.valid = true;
+    n1g_dev_i2c_restore_pcf(s, &backup);
+
+    uint64_t saved = get_u64le(&data[8]);
+    uint64_t now = wall_clock_seconds();
+    uint64_t elapsed = now > saved ? now - saved : 0u;
+    n1g_dev_i2c_advance_rtc(s, elapsed);
+    n1g_info(s, "pcf state loaded path=%s elapsed_seconds=%llu",
+             s->opts.pcf_state_path, (unsigned long long)elapsed);
+    return true;
+}
+
 static n1g_opts_t make_restart_opts(const n1g_state_t *s, const char *preset) {
     n1g_opts_t next = s->opts;
     apply_run_preset(&next, preset);
@@ -357,6 +472,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool host_profile = opts->host_profile;
     const bool verbose = opts->verbose;
     const char *disk_out_path = opts->disk_out_path;
+    const char *pcf_state_path = opts->pcf_state_path;
     const char *disk_seed_path = opts->disk_seed_path;
     const char *disk_seed_label = opts->disk_seed_label;
     const uint32_t battery_percent = opts->battery_percent;
@@ -378,6 +494,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->host_profile = host_profile;
     opts->verbose = verbose;
     opts->disk_out_path = disk_out_path;
+    opts->pcf_state_path = pcf_state_path;
     opts->disk_seed_path = disk_seed_path;
     opts->disk_seed_label = disk_seed_label;
     opts->battery_percent = battery_percent;
@@ -613,6 +730,10 @@ int main(int argc, char **argv) {
     if (!init_state(&s, opts)) {
         return 1;
     }
+    if (!load_pcf_state(&s)) {
+        destroy_state(&s);
+        return 1;
+    }
     bool state_active = true;
     if (s.opts.web_enabled && !n1g_web_start(&s, &web, s.opts.web_port)) {
         destroy_state(&s);
@@ -723,6 +844,10 @@ run_image:
 
         n1g_info(&s, "web restart requested preset=%s", restart_preset);
         if (!save_disk_output(&s)) {
+            exit_code = 1;
+            break;
+        }
+        if (!save_pcf_state(&s)) {
             exit_code = 1;
             break;
         }
@@ -1352,6 +1477,10 @@ run_image:
                     exit_code = 1;
                     break;
                 }
+                if (!save_pcf_state(&s)) {
+                    exit_code = 1;
+                    break;
+                }
                 n1g_opts_t next = make_restart_opts(&s, restart_preset);
                 n1g_pcf_backup_t pcf_backup;
                 n1g_dev_i2c_save_pcf(&s, &pcf_backup);
@@ -1369,6 +1498,9 @@ run_image:
         }
     }
     if (!save_disk_output(&s)) {
+        exit_code = 1;
+    }
+    if (!save_pcf_state(&s)) {
         exit_code = 1;
     }
     n1g_web_stop(&web);

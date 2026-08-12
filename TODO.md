@@ -134,7 +134,9 @@ stereo output with stable playback controls and no unbounded buffering.
       alarm status.
 - [x] Preserve the battery-backed PCF register bank, live RTC date/time, and
       alarm programming across browser firmware/preset restarts.
-- [ ] Preserve RTC date/time across emulator process restarts.
+- [x] Persist the PCF battery domain across emulator process restarts with an
+      explicit, versioned `--pcf-state` file and advance the RTC by elapsed
+      host time while the process is stopped.
 - [ ] Model sleep, wake, power-off, and wake-source transitions.
 - [x] Model the XMB RAM self-refresh request/status handshake used by Apple’s
       backlight timeout path, verify the post-startup 120-second native idle
