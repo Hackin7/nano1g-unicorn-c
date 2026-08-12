@@ -243,7 +243,9 @@ reasonable range of host speeds and instruction-slice settings.
 - [ ] Test Photos and photo transitions once storage decoding paths are ready.
 - [x] Test the Clock list with a deterministic native navigation trace and
       clean framebuffer/DMA diagnostics.
-- [ ] Test Clock editing, alarms, stopwatch, calendar, contacts, and notes.
+- [x] Test adding a world clock through the native Region and City selectors.
+- [ ] Test Clock editing/deletion, alarms, stopwatch, calendar, contacts, and
+      notes.
 - [ ] Test bundled games and identify any new hardware assumptions.
 - [ ] Test settings changes followed by restart and disk reload.
 - [ ] Expand Rockbox plugin coverage beyond the currently verified plugins.
