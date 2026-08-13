@@ -28,6 +28,17 @@ Run the registered smoke tests:
 ctest --test-dir build-mingw --output-on-failure
 ```
 
+Run repeatable Apple/Rockbox performance suites with one warm-up and seven
+measured processes:
+
+```powershell
+python tools/benchmark_emulator.py --suite all --runs 7 `
+  --output tmp/benchmark-baseline.json
+```
+
+See `docs/performance.md` for baseline comparison, diagnostic-mode caveats,
+idle acceleration safety, and retained/rejected optimization results.
+
 The Rockbox and Apple tests use fixtures from `../artifacts/` and skip when
 those local files are absent.
 

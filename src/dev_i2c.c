@@ -249,6 +249,25 @@ static uint32_t pcf_bvm_threshold_mv(const n1g_state_t *s) {
     return code == 0u ? 2700u : 2700u + code * 100u;
 }
 
+bool n1g_dev_i2c_idle_quiescent(const n1g_state_t *s) {
+    uint32_t battery_mv = n1g_dev_i2c_battery_mv(s);
+    uint32_t threshold_mv = pcf_bvm_threshold_mv(s);
+    bool below = battery_mv < threshold_mv;
+
+    if (!s->i2c.pcf_low_battery && below &&
+        s->i2c.pcf_low_battery_deadline == 0u) {
+        return false;
+    }
+    if (s->i2c.pcf_low_battery &&
+        battery_mv >= threshold_mv + threshold_mv * 4u / 100u) {
+        return false;
+    }
+    if (!below && s->i2c.pcf_low_battery_deadline != 0u) {
+        return false;
+    }
+    return true;
+}
+
 static uint16_t pcf_adc_input(const n1g_state_t *s, uint8_t mux) {
     uint32_t mv = n1g_dev_i2c_battery_mv(s);
     uint32_t raw;

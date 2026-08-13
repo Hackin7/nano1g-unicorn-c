@@ -15,6 +15,7 @@
 
 bool n1g_input_script_load(n1g_input_script_t *script, const char *text);
 void n1g_input_script_tick(n1g_state_t *s);
+void n1g_input_script_advance_wait(n1g_state_t *s, uint64_t ticks);
 bool n1g_input_script_done(const n1g_input_script_t *script);
 
 #endif

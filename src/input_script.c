@@ -138,6 +138,14 @@ void n1g_input_script_tick(n1g_state_t *s) {
     }
 }
 
+void n1g_input_script_advance_wait(n1g_state_t *s, uint64_t ticks) {
+    n1g_input_script_t *script = &s->input_script_state;
+    if (ticks > script->wait_left) {
+        ticks = script->wait_left;
+    }
+    script->wait_left -= ticks;
+}
+
 bool n1g_input_script_done(const n1g_input_script_t *script) {
     return script->cursor >= script->count && script->wait_left == 0;
 }

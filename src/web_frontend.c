@@ -68,7 +68,7 @@ static const char index_html[] =
 "<h1>iPod Nano 1G</h1>"
 "<div id=\"status\">Loading...</div>"
 "<div id=\"firmware-bar\"><label>Image <select id=\"firmware-select\"><option value=\"apple-official\">Apple official boot</option><option value=\"apple-stage0\">Apple stage0 canary</option><option value=\"apple-direct\">Apple OS direct diagnostic</option><option value=\"rockbox\">Rockbox</option><option value=\"ipodlinux\">iPod Linux (experimental)</option></select></label><button id=\"restart-btn\" type=\"button\">Restart</button><label id=\"audio-control\"><input id=\"audio-enable\" type=\"checkbox\">Audio</label></div>"
-"<div id=\"hardware-bar\"><label>Battery <input id=\"battery-level\" type=\"range\" min=\"0\" max=\"100\" value=\"100\"><output id=\"battery-value\">100%</output></label><label><input id=\"main-charger\" type=\"checkbox\">FireWire</label><label><input id=\"usb-charger\" type=\"checkbox\">USB power</label><label><input id=\"hold-switch\" type=\"checkbox\">Hold</label></div>"
+"<div id=\"hardware-bar\"><label>Battery <input id=\"battery-level\" type=\"range\" min=\"0\" max=\"100\" value=\"100\"><output id=\"battery-value\">100%</output></label><label><input id=\"main-charger\" type=\"checkbox\">FireWire</label><label><input id=\"usb-charger\" type=\"checkbox\">USB power</label><label><input id=\"hold-switch\" type=\"checkbox\">Hold</label><label><input id=\"force-backlight\" type=\"checkbox\">Keep screen on</label></div>"
 "<div id=\"stats\"><span><b>FPS</b> <span id=\"fps\">0</span></span><span><b>guest</b> <span id=\"guest\">0</span></span><span><b>audio</b> <span id=\"audio\">0/0</span></span><span><b>input</b> <span id=\"input\">none</span></span></div>"
 "<div id=\"ipod-container\" tabindex=\"0\">"
 "<div id=\"ipod-body\">"
@@ -89,7 +89,7 @@ static const char index_html[] =
 "const firmware_select=document.getElementById('firmware-select');"
 "const restart_btn=document.getElementById('restart-btn');"
 "const audio_enable=document.getElementById('audio-enable');"
-"const battery_level=document.getElementById('battery-level'),battery_value=document.getElementById('battery-value'),main_charger=document.getElementById('main-charger'),usb_charger=document.getElementById('usb-charger'),hold_switch=document.getElementById('hold-switch');"
+"const battery_level=document.getElementById('battery-level'),battery_value=document.getElementById('battery-value'),main_charger=document.getElementById('main-charger'),usb_charger=document.getElementById('usb-charger'),hold_switch=document.getElementById('hold-switch'),force_backlight=document.getElementById('force-backlight');"
 "const ipod=document.getElementById('ipod-container');"
 "let seq=-1,last_frame=0,wheel_down=false,last_angle=0,select_dirty=false,tick_inflight=false,hardware_timer=null,audio_ctx=null,audio_timer=null,audio_cursor=0,audio_latest=0,audio_next=0,audio_rate=0,audio_stream=-1,audio_polling=false,audio_sources=new Set(),clicker_seen=false,clicker_stops=0;"
 "function set_status(message){status_el.textContent=message;}"
@@ -102,6 +102,7 @@ static const char index_html[] =
 "async function update_hardware(){const q=new URLSearchParams({battery:battery_level.value,main_charger:main_charger.checked?'1':'0',usb_charger:usb_charger.checked?'1':'0',hold:hold_switch.checked?'1':'0'});try{const r=await fetch('/hardware?'+q,{cache:'no-store'});if(!r.ok)set_status('Hardware update failed');}catch(e){set_status('Hardware update failed: '+e.message);}}"
 "function queue_hardware(){if(hardware_timer)clearTimeout(hardware_timer);hardware_timer=setTimeout(update_hardware,80);}"
 "battery_level.oninput=()=>{battery_value.value=battery_level.value+'%';queue_hardware();};main_charger.onchange=update_hardware;usb_charger.onchange=update_hardware;hold_switch.onchange=update_hardware;"
+"force_backlight.onchange=async()=>{seq=-1;try{const r=await fetch('/display?force_backlight='+(force_backlight.checked?'1':'0'),{cache:'no-store'});if(!r.ok)set_status('Display update failed');}catch(e){set_status('Display update failed: '+e.message);}};"
 "function tap_url(name){return '/input?button='+encodeURIComponent(name)+'&tap=1';}"
 "function bind_button(selector,name){const el=document.querySelector(selector);let pressed=false;"
 "const down=e=>{e.preventDefault();pressed=true;el.classList.add('active');};"
@@ -129,7 +130,7 @@ static const char index_html[] =
 "audio_enable.onchange=async()=>{if(audio_enable.checked){const AC=window.AudioContext||window.webkitAudioContext;if(!AC){audio_enable.checked=false;return;}if(!audio_ctx)audio_ctx=new AC();await audio_ctx.resume();audio_cursor=audio_latest;reset_audio_queue();if(audio_timer)clearInterval(audio_timer);audio_timer=setInterval(pump_audio,40);pump_audio();}else{if(audio_timer)clearInterval(audio_timer);audio_timer=null;reset_audio_queue();if(audio_ctx)await audio_ctx.suspend();}};"
 "async function draw_frame(frame_seq){const r=await fetch('/frame.rgba?'+frame_seq,{cache:'no-store'});const buf=await r.arrayBuffer();ctx.putImageData(new ImageData(new Uint8ClampedArray(buf),176,132),0,0);const now=performance.now();fps_counter.textContent=last_frame?Math.floor(1000/(now-last_frame)):'0';last_frame=now;}"
 "async function tick(){if(tick_inflight)return;tick_inflight=true;try{const r=await fetch('/status.json',{cache:'no-store'});const s=await r.json();"
-"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('light',(s.backlight_on?'on ':'off ')+s.backlight_level+'/32');text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;if(!clicker_seen){clicker_stops=s.clicker_stops;clicker_seen=true;}else if(s.clicker_stops>clicker_stops){play_clicker(s.clicker_period,s.clicker_duty,s.clicker_last_ticks,s.rtc_usec_per_tick,s.clicker_stops-clicker_stops);clicker_stops=s.clicker_stops;}"
+"set_status((s.running?'Running':'Stopped')+' - '+s.label);if(s.preset&&!select_dirty&&document.activeElement!==firmware_select)firmware_select.value=s.preset;if(document.activeElement!==battery_level){battery_level.value=s.battery_percent;battery_value.value=s.battery_percent+'%';}main_charger.checked=s.main_charger;usb_charger.checked=s.usb_charger;hold_switch.checked=s.hold;force_backlight.checked=s.force_backlight_on;ipod.classList.toggle('held',s.hold);text('running',s.running?'running':'stopped');text('guest',s.guest_insns.toLocaleString());text('audio',(s.audio_output?'on ':'idle ')+s.audio_rate.toLocaleString());text('lcd',s.lcd_words.toLocaleString());text('light',(s.backlight_on?'on ':'off ')+s.backlight_level+'/32'+(s.force_backlight_on?' forced':''));text('disk',s.disk_reads.toLocaleString());text('input',s.input);text('pc',s.cpu_pc);if(s.audio_stream!==audio_stream||s.audio_rate!==audio_rate||s.audio_cursor<audio_latest){audio_cursor=s.audio_cursor;audio_stream=s.audio_stream;audio_rate=s.audio_rate;reset_audio_queue();}audio_latest=s.audio_cursor;if(!clicker_seen){clicker_stops=s.clicker_stops;clicker_seen=true;}else if(s.clicker_stops>clicker_stops){play_clicker(s.clicker_period,s.clicker_duty,s.clicker_last_ticks,s.rtc_usec_per_tick,s.clicker_stops-clicker_stops);clicker_stops=s.clicker_stops;}"
 "if(s.frame_seq!==seq){await draw_frame(s.frame_seq);seq=s.frame_seq;}}catch(e){set_status('Offline');text('running','offline');}finally{tick_inflight=false;}}"
 "setInterval(tick,120);tick();ipod.focus();"
 "</script></body></html>";
@@ -250,7 +251,7 @@ static void apply_backlight(n1g_state_t *s, uint8_t *r, uint8_t *g, uint8_t *b) 
     *b = (uint8_t)((*b * intensity + 127u) / 255u);
 }
 
-static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len) {
+static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len, bool apply_lighting) {
     const uint32_t w = N1G_LCD_W;
     const uint32_t h = N1G_LCD_H;
     const uint32_t row = (w * 3u + 3u) & ~3u;
@@ -277,7 +278,9 @@ static uint8_t *make_bmp(n1g_state_t *s, size_t *out_len) {
         for (uint32_t x = 0; x < w; x++) {
             uint8_t r = 0, g = 0, b = 0;
             rgb565(s->lcd2.pixels[y * w + x], &r, &g, &b);
-            apply_backlight(s, &r, &g, &b);
+            if (apply_lighting) {
+                apply_backlight(s, &r, &g, &b);
+            }
             uint8_t *px = dst + y * row + x * 3u;
             px[0] = b;
             px[1] = g;
@@ -339,6 +342,10 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
     int n = snprintf(body,
                      sizeof(body),
                      "{\"running\":%s,\"frame_seq\":%llu,\"guest_insns\":%llu,"
+                     "\"scheduled_insns\":%llu,\"active_slices\":%llu,"
+                     "\"cpu_slice_calls\":%llu,\"cop_slice_calls\":%llu,"
+                     "\"halted_ticks\":%llu,\"fast_forwarded_ticks\":%llu,"
+                     "\"timing_boundaries\":%llu,\"mmio_callbacks\":%llu,"
                      "\"device_ticks\":%llu,\"rtc_usec_per_tick\":%u,"
                      "\"rtc_bcd\":\"%02x-%02x-%02xT%02x:%02x:%02x\","
                      "\"rtc_second_events\":%llu,\"rtc_alarm_events\":%llu,"
@@ -360,6 +367,7 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      "\"input_events\":%llu,\"input_suppressed\":%llu,\"input\":\"%s\","
                      "\"battery_percent\":%u,\"battery_mv\":%u,\"battery_low\":%s,"
                      "\"main_charger\":%s,\"usb_charger\":%s,\"hold\":%s,"
+                     "\"force_backlight_on\":%s,"
                      "\"backlight_on\":%s,\"backlight_level\":%u,\"backlight_mode\":\"%s\","
                      "\"backlight_pwm\":\"0x%08x\",\"backlight_pulses\":%llu,"
                      "\"clicker_on\":%s,\"clicker_period\":%u,\"clicker_duty\":%u,"
@@ -389,6 +397,14 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      running ? "true" : "false",
                      (unsigned long long)web->frame_seq,
                      (unsigned long long)s->counters.guest_insns,
+                     (unsigned long long)s->counters.scheduled_insns,
+                     (unsigned long long)s->counters.active_slices,
+                     (unsigned long long)s->counters.cpu_slice_calls,
+                     (unsigned long long)s->counters.cop_slice_calls,
+                     (unsigned long long)s->counters.halted_ticks,
+                     (unsigned long long)s->counters.fast_forwarded_ticks,
+                     (unsigned long long)s->counters.timing_boundaries,
+                     (unsigned long long)s->counters.mmio_callbacks,
                      (unsigned long long)s->counters.device_ticks,
                      s->opts.rtc_usec_per_tick,
                      rtc[6], rtc[5], rtc[4], rtc[2], rtc[1], rtc[0],
@@ -457,6 +473,7 @@ static bool send_status(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bool
                      s->opts.main_charger_connected ? "true" : "false",
                      s->opts.usb_charger_connected ? "true" : "false",
                      s->opts.hold_switch_engaged ? "true" : "false",
+                     web->force_backlight_on ? "true" : "false",
                      n1g_dev_backlight_powered(s) ? "true" : "false",
                      n1g_dev_backlight_level(s),
                      n1g_dev_backlight_mode(s),
@@ -887,6 +904,30 @@ static bool send_hardware(n1g_state_t *s, intptr_t fd, const char *query) {
     return send_response(fd, "200 OK", "application/json", body, (size_t)n);
 }
 
+static bool send_display(n1g_web_server_t *web, intptr_t fd, const char *query) {
+    uint32_t force_backlight = 0u;
+    if (!query_u32(query, "force_backlight", &force_backlight) ||
+        force_backlight > 1u) {
+        const char msg[] = "{\"ok\":false}\n";
+        return send_response(fd, "400 Bad Request", "application/json",
+                             msg, sizeof(msg) - 1u);
+    }
+
+    bool enabled = force_backlight != 0u;
+    if (web->force_backlight_on != enabled) {
+        web->force_backlight_on = enabled;
+        web->frame_seq++;
+    }
+    char body[64];
+    int n = snprintf(body, sizeof(body),
+                     "{\"ok\":true,\"force_backlight_on\":%s}\n",
+                     enabled ? "true" : "false");
+    if (n <= 0 || (size_t)n >= sizeof(body)) {
+        return false;
+    }
+    return send_response(fd, "200 OK", "application/json", body, (size_t)n);
+}
+
 static bool valid_restart_preset(const char *preset) {
     return strcmp(preset, "rockbox") == 0 ||
            strcmp(preset, "ipodlinux") == 0 ||
@@ -960,13 +1001,17 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         (void)send_input(s, fd, query ? query : "");
     } else if (strcmp(path, "/hardware") == 0) {
         (void)send_hardware(s, fd, query ? query : "");
+    } else if (strcmp(path, "/display") == 0) {
+        (void)send_display(web, fd, query ? query : "");
     } else if (strcmp(path, "/control") == 0) {
         (void)send_control(web, fd, query ? query : "");
     } else if (strcmp(path, "/audio.pcm") == 0) {
         (void)send_audio_pcm(s, fd, query ? query : "");
     } else if (strcmp(path, "/frame.rgba") == 0) {
         size_t len = 0;
-        uint8_t *rgba = make_rgba(s, &len, !query_has(query, "raw=1"));
+        bool apply_lighting = !query_has(query, "raw=1") &&
+                              !web->force_backlight_on;
+        uint8_t *rgba = make_rgba(s, &len, apply_lighting);
         if (!rgba) {
             const char msg[] = "out of memory\n";
             (void)send_response(fd, "500 Internal Server Error", "text/plain", msg, sizeof(msg) - 1u);
@@ -976,7 +1021,7 @@ static void handle_client(n1g_state_t *s, n1g_web_server_t *web, intptr_t fd, bo
         }
     } else if (strcmp(path, "/frame.bmp") == 0) {
         size_t len = 0;
-        uint8_t *bmp = make_bmp(s, &len);
+        uint8_t *bmp = make_bmp(s, &len, !web->force_backlight_on);
         if (!bmp) {
             const char msg[] = "out of memory\n";
             (void)send_response(fd, "500 Internal Server Error", "text/plain", msg, sizeof(msg) - 1u);

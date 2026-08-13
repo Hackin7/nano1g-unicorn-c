@@ -24,6 +24,7 @@ static const int arm_regs[16] = {
 
 static uint64_t mmio_read_cb(uc_engine *uc, uint64_t offset, unsigned size, void *user_data) {
     mmio_ctx_t *ctx = (mmio_ctx_t *)user_data;
+    ctx->s->counters.mmio_callbacks++;
     uint64_t addr = offset < ctx->base ? (uint64_t)ctx->base + offset : offset;
     if (ctx->s->opts.trace_mmio) {
         uint32_t pc = 0;
@@ -36,6 +37,7 @@ static uint64_t mmio_read_cb(uc_engine *uc, uint64_t offset, unsigned size, void
 
 static void mmio_write_cb(uc_engine *uc, uint64_t offset, unsigned size, uint64_t value, void *user_data) {
     mmio_ctx_t *ctx = (mmio_ctx_t *)user_data;
+    ctx->s->counters.mmio_callbacks++;
     uint64_t addr = offset < ctx->base ? (uint64_t)ctx->base + offset : offset;
     if (ctx->s->opts.trace_mmio) {
         uint32_t pc = 0;

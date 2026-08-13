@@ -15,6 +15,7 @@ typedef struct n1g_web_server {
     uint64_t last_backlight_generation;
     char restart_preset[32];
     bool restart_requested;
+    bool force_backlight_on;
     bool active;
 } n1g_web_server_t;
 

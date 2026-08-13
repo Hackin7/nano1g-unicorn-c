@@ -205,6 +205,16 @@ can enter, use, and leave its expected USB modes without register stubs.
 - [x] Remove read-only Apple progress hooks from normal execution and expose
       them explicitly through `--apple-diagnostics` so probes do not distort
       firmware timing.
+- [x] Add repeatable Apple/Rockbox startup, menu, active UI, idle, audio, and
+      web benchmarks with warm-up runs, median/p95 JSON output, semantic frame
+      milestones, and local-baseline comparison.
+- [x] Separate scheduled instruction budget, active CPU/COP calls, halted and
+      fast-forwarded ticks, MMIO callbacks, device ticks, and timing boundaries
+      in summaries, host profiles, and browser status.
+- [x] Add conservative dual-core idle fast-forwarding with deadline bounds and
+      differential single-tick equivalence coverage.
+- [x] Keep normal presets free of inherited diagnostics, verbose logging,
+      tracing, and host profiling.
 - [ ] Raise normal Apple throughput from the measured 14.1 MIPS early-boot
       rate toward the modeled 64 MIPS rate without reducing peripheral timing
       resolution or skipping guest-visible work.

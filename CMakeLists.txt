@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
 option(NANO1G_STRICT "Enable strict compiler warnings" ON)
+option(NANO1G_ENABLE_IPO "Enable supported interprocedural optimization for Release builds" OFF)
 set(UNICORN_ROOT "" CACHE PATH "Optional Unicorn install prefix")
 set(_NANO1G_LOCAL_UNICORN "${CMAKE_CURRENT_SOURCE_DIR}/.deps/python-unicorn/unicorn")
 
@@ -71,6 +72,17 @@ set(NANO1G_SOURCES
 add_executable(nano1g ${NANO1G_SOURCES})
 add_executable(nano1g-control ${NANO1G_SOURCES})
 add_executable(nano1g-clicky-ui ${NANO1G_SOURCES})
+
+if(NANO1G_ENABLE_IPO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT NANO1G_IPO_SUPPORTED OUTPUT NANO1G_IPO_ERROR)
+  if(NANO1G_IPO_SUPPORTED)
+    set_property(TARGET nano1g nano1g-control nano1g-clicky-ui
+      PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+  else()
+    message(WARNING "Release IPO is unavailable: ${NANO1G_IPO_ERROR}")
+  endif()
+endif()
 
 target_include_directories(nano1g PRIVATE
   include
@@ -761,6 +773,12 @@ if(BUILD_TESTING)
         -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_cpucon_wait.cmake)
+    add_test(NAME smoke_idle_fast_forward
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_idle_fast_forward.cmake)
     add_test(NAME smoke_apple_nohle
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>

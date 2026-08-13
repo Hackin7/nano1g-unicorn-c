@@ -319,3 +319,87 @@ void n1g_bus_tick(n1g_state_t *s) {
     n1g_disk_tick(s);
     n1g_dev_intc_tick(s);
 }
+
+static bool idle_devices_quiescent(const n1g_state_t *s) {
+    if ((s->timer.cfg[0] & 0x80000000u) != 0u ||
+        (s->timer.cfg[1] & 0x80000000u) != 0u ||
+        s->cpucon.wait_ticks[0] != 0u || s->cpucon.wait_ticks[1] != 0u ||
+        s->i2s.config != 0u || s->opto.pending_release_bits != 0u ||
+        s->opto.queue_len != 0u || s->i2c.pcf_wake_requests != 0u) {
+        return false;
+    }
+    if (s->intc.cpu_status != 0u || s->intc.cop_status != 0u ||
+        s->intc.forced_status != 0u || s->intc.hi_cpu_status != 0u ||
+        s->intc.hi_cop_status != 0u || s->intc.hi_forced_status != 0u) {
+        return false;
+    }
+    if (s->disk.dma_pending || s->disk.pio_data_pending ||
+        s->disk.pio_completion_pending || s->disk.nondata_pending ||
+        s->disk.soft_reset_pending) {
+        return false;
+    }
+    for (uint32_t channel = 0; channel < 4u; channel++) {
+        if (s->dma.lcd_request_armed[channel] || s->dma.ch[channel].active) {
+            return false;
+        }
+    }
+    for (uint32_t channel = 0; channel < 2u; channel++) {
+        if (s->serial.channel[channel].thre_irq_pending) {
+            return false;
+        }
+    }
+    if (!n1g_dev_i2c_idle_quiescent(s)) {
+        return false;
+    }
+    return true;
+}
+
+static uint64_t ticks_until(uint64_t now, uint64_t deadline) {
+    return deadline > now ? deadline - now : 1u;
+}
+
+uint64_t n1g_bus_idle_advance_limit(const n1g_state_t *s) {
+    if (!s->cpu[N1G_CORE_CPU].halted || !s->cpu[N1G_CORE_COP].halted ||
+        !idle_devices_quiescent(s)) {
+        return 1u;
+    }
+
+    uint64_t now = s->counters.device_ticks;
+    uint64_t limit = 65536u;
+    const uint64_t deadlines[] = {
+        s->i2c.pcf_standby_deadline,
+        s->i2c.pcf_adc_deadline,
+        s->i2c.pcf_low_battery_deadline,
+        s->i2c.pcf_low_battery_standby_deadline,
+    };
+    for (size_t i = 0; i < sizeof(deadlines) / sizeof(deadlines[0]); i++) {
+        if (deadlines[i] != 0u) {
+            uint64_t until = ticks_until(now, deadlines[i]);
+            if (until < limit) limit = until;
+        }
+    }
+
+    uint64_t usec = s->opts.rtc_usec_per_tick;
+    if (usec != 0u) {
+        uint64_t elapsed_ticks = now - s->i2c.rtc_base_ticks;
+        uint64_t target_usec = (s->i2c.rtc_last_second + 1u) * 1000000ull;
+        uint64_t elapsed_usec = elapsed_ticks * usec;
+        uint64_t until_second = target_usec > elapsed_usec
+                                    ? (target_usec - elapsed_usec + usec - 1u) / usec
+                                    : 1u;
+        if (until_second < limit) limit = until_second;
+    }
+    return limit == 0u ? 1u : limit;
+}
+
+void n1g_bus_advance(n1g_state_t *s, uint64_t ticks) {
+    if (ticks <= 1u) {
+        n1g_bus_tick(s);
+        return;
+    }
+    s->counters.device_ticks += ticks;
+    s->timer.usec += (uint32_t)(ticks * s->opts.rtc_usec_per_tick);
+    n1g_dev_i2c_tick(s);
+    n1g_dev_intc_tick(s);
+    s->counters.fast_forwarded_ticks += ticks - 1u;
+}

@@ -75,7 +75,7 @@ static void host_profile_report(n1g_state_t *s, const n1g_host_profile_t *profil
                             profile->input_ns + profile->web_ns;
     uint64_t loop_ns = total_ns >= accounted_ns ? total_ns - accounted_ns : 0;
     n1g_info(s,
-             "host_profile total_ns=%llu cpu_ns=%llu cop_ns=%llu bus_ns=%llu input_ns=%llu web_ns=%llu loop_ns=%llu slices=%llu cpu_calls=%llu cop_calls=%llu web_polls=%llu",
+             "host_profile total_ns=%llu cpu_ns=%llu cop_ns=%llu bus_ns=%llu input_ns=%llu web_ns=%llu loop_ns=%llu slices=%llu cpu_calls=%llu cop_calls=%llu web_polls=%llu scheduled_insns=%llu active_slices=%llu halted_ticks=%llu fast_forwarded_ticks=%llu mmio_callbacks=%llu timing_boundaries=%llu",
              (unsigned long long)total_ns,
              (unsigned long long)profile->cpu_ns,
              (unsigned long long)profile->cop_ns,
@@ -86,7 +86,13 @@ static void host_profile_report(n1g_state_t *s, const n1g_host_profile_t *profil
              (unsigned long long)profile->slices,
              (unsigned long long)profile->cpu_calls,
              (unsigned long long)profile->cop_calls,
-             (unsigned long long)profile->web_polls);
+             (unsigned long long)profile->web_polls,
+             (unsigned long long)s->counters.scheduled_insns,
+             (unsigned long long)s->counters.active_slices,
+             (unsigned long long)s->counters.halted_ticks,
+             (unsigned long long)s->counters.fast_forwarded_ticks,
+             (unsigned long long)s->counters.mmio_callbacks,
+             (unsigned long long)s->counters.timing_boundaries);
     n1g_bus_host_profile_report(s);
 }
 
@@ -126,7 +132,7 @@ static void usage(void) {
     puts("       [--dump32 ADDR] [--dump-count N]");
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
     puts("       [--battery-percent N] [--main-charger] [--usb-charger] [--hold-switch]");
-    puts("       [--web PORT] [--web-no-hold] [--run-forever]");
+    puts("       [--web PORT] [--web-no-hold] [--run-forever] [--no-idle-fast-forward]");
     puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--host-profile] [--verbose]");
 }
 
@@ -166,6 +172,7 @@ static n1g_opts_t parse_args(int argc, char **argv) {
     opts.load_addr = N1G_SDRAM_BASE;
     opts.dump_count = 1;
     opts.battery_percent = 100u;
+    opts.idle_fast_forward = true;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -261,6 +268,8 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             opts.web_no_hold = true;
         } else if (strcmp(a, "--run-forever") == 0) {
             opts.run_forever = true;
+        } else if (strcmp(a, "--no-idle-fast-forward") == 0) {
+            opts.idle_fast_forward = false;
         } else if (strcmp(a, "--trace-pc") == 0) {
             opts.trace_pc = true;
         } else if (strcmp(a, "--trace-mmio") == 0) {
@@ -475,11 +484,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool web_no_hold = opts->web_no_hold;
     const char *ppm_path = opts->ppm_path;
     const bool run_forever = opts->run_forever;
-    const bool trace_pc = opts->trace_pc;
-    const bool trace_mmio = opts->trace_mmio;
-    const bool apple_diagnostics = opts->apple_diagnostics;
-    const bool host_profile = opts->host_profile;
-    const bool verbose = opts->verbose;
+    const bool idle_fast_forward = opts->idle_fast_forward;
     const char *disk_out_path = opts->disk_out_path;
     const char *pcf_state_path = opts->pcf_state_path;
     const char *disk_seed_path = opts->disk_seed_path;
@@ -496,12 +501,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->web_port = web_port;
     opts->web_no_hold = web_no_hold;
     opts->run_forever = run_forever;
+    opts->idle_fast_forward = idle_fast_forward;
     opts->ppm_path = ppm_path;
-    opts->trace_pc = trace_pc;
-    opts->trace_mmio = trace_mmio;
-    opts->apple_diagnostics = apple_diagnostics;
-    opts->host_profile = host_profile;
-    opts->verbose = verbose;
     opts->disk_out_path = disk_out_path;
     opts->pcf_state_path = pcf_state_path;
     opts->disk_seed_path = disk_seed_path;
@@ -773,14 +774,85 @@ run_image:
                  s.opts.run_forever ? 1u : 0u,
                  s.opts.map_flash_zero ? 1u : 0u,
                  s.opts.virtual_memmap ? 1u : 0u);
+        if (s.opts.apple_diagnostics || s.opts.verbose || s.opts.trace_pc ||
+            s.opts.trace_mmio || s.opts.host_profile) {
+            n1g_info(&s,
+                     "performance diagnostics enabled apple=%u verbose=%u trace_pc=%u trace_mmio=%u host_profile=%u",
+                     s.opts.apple_diagnostics ? 1u : 0u,
+                     s.opts.verbose ? 1u : 0u,
+                     s.opts.trace_pc ? 1u : 0u,
+                     s.opts.trace_mmio ? 1u : 0u,
+                     s.opts.host_profile ? 1u : 0u);
+        }
         uint64_t remaining = s.opts.max_insns;
         while ((s.opts.run_forever || remaining > 0) && !stop_requested) {
             uint32_t slice = s.opts.slice_insns;
             if (!s.opts.run_forever && remaining < slice) {
                 slice = (uint32_t)remaining;
             }
+            uint64_t advance_ticks = s.opts.idle_fast_forward
+                                         ? n1g_bus_idle_advance_limit(&s)
+                                         : 1u;
+            if (advance_ticks > 1u) {
+                if (s.opts.input_script) {
+                    uint64_t input_limit = s.input_script_state.wait_left;
+                    if (input_limit == 0u) {
+                        if (!n1g_input_script_done(&s.input_script_state)) {
+                            advance_ticks = 1u;
+                        }
+                    } else if (advance_ticks > input_limit) {
+                        advance_ticks = input_limit;
+                    }
+                }
+                if (s.opts.web_enabled) {
+                    uint64_t web_limit = 256u - (s.counters.device_ticks & 0xffu);
+                    uint64_t before_web_poll = web_limit > 1u ? web_limit - 1u : 1u;
+                    if (advance_ticks > before_web_poll) advance_ticks = before_web_poll;
+                }
+                if (!s.opts.run_forever) {
+                    uint64_t remaining_ticks = (remaining + slice - 1u) / slice;
+                    if (advance_ticks > remaining_ticks) advance_ticks = remaining_ticks;
+                }
+            }
+            if (advance_ticks > 1u) {
+                uint64_t scheduled = advance_ticks * slice;
+                s.counters.scheduled_insns += scheduled;
+                s.counters.halted_ticks += advance_ticks;
+                uint64_t part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
+                n1g_bus_advance(&s, advance_ticks);
+                s.counters.timing_boundaries++;
+                if (s.opts.host_profile) {
+                    host_profile_add(&host_profile.bus_ns, part_started_ns);
+                    host_profile.slices++;
+                }
+                if (s.opts.input_script) {
+                    n1g_input_script_advance_wait(&s, advance_ticks);
+                }
+                if (!s.opts.run_forever) {
+                    remaining = scheduled >= remaining ? 0u : remaining - scheduled;
+                }
+                if (s.i2c.pcf_wake_requests != 0u) {
+                    restart_now = true;
+                    power_wake_restart = true;
+                    (void)snprintf(restart_preset, sizeof(restart_preset), "%s",
+                                   current_preset(&s.opts));
+                    break;
+                }
+                continue;
+            }
+            s.counters.scheduled_insns += slice;
+            bool cpu_active = s.cpu[N1G_CORE_CPU].running && !s.cpu[N1G_CORE_CPU].halted;
+            bool cop_active = s.cpu[N1G_CORE_COP].running && !s.cpu[N1G_CORE_COP].halted;
+            if (cpu_active || cop_active) {
+                s.counters.active_slices++;
+            } else {
+                s.counters.halted_ticks++;
+            }
             uint64_t part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
             bool cpu_ok = n1g_cpu_step_slice(&s, N1G_CORE_CPU, slice);
+            if (cpu_active) {
+                s.counters.cpu_slice_calls++;
+            }
             if (s.opts.host_profile) {
                 host_profile_add(&host_profile.cpu_ns, part_started_ns);
                 host_profile.cpu_calls++;
@@ -791,6 +863,9 @@ run_image:
             if (!s.cpu[N1G_CORE_COP].halted) {
                 part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
                 bool cop_ok = n1g_cpu_step_slice(&s, N1G_CORE_COP, slice);
+                if (cop_active) {
+                    s.counters.cop_slice_calls++;
+                }
                 if (s.opts.host_profile) {
                     host_profile_add(&host_profile.cop_ns, part_started_ns);
                     host_profile.cop_calls++;
@@ -801,6 +876,7 @@ run_image:
             }
             part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
             n1g_bus_tick(&s);
+            s.counters.timing_boundaries++;
             if (s.opts.host_profile) {
                 host_profile_add(&host_profile.bus_ns, part_started_ns);
             }
@@ -903,9 +979,22 @@ run_image:
         n1g_info(&s, "%s", line);
     }
     n1g_info(&s,
-             "summary guest_insns=%llu ticks=%llu mmio_r=%llu mmio_w=%llu unrouted_mmio=%llu/%llu lcd_words=%llu lcd_gram=%llu lcd_block=%llu lcd_overruns=%llu dma_lcd_transfers=%llu lcd_dma_accepts=%llu lcd_dma_mismatches=%llu lcd_dma_descriptor_pixels=%llu lcd_dma_block_pixels=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
+             "summary guest_insns=%llu scheduled_insns=%llu active_slices=%llu cpu_calls=%llu cop_calls=%llu halted_ticks=%llu fast_forwarded_ticks=%llu timing_boundaries=%llu ticks=%llu timer_usec=%u rtc_seconds=%llu pcf_lowbat=%u pcf_lowbat_events=%llu pcf_standby=%u mmio_callbacks=%llu mmio_r=%llu mmio_w=%llu unrouted_mmio=%llu/%llu lcd_words=%llu lcd_gram=%llu lcd_block=%llu lcd_overruns=%llu dma_lcd_transfers=%llu lcd_dma_accepts=%llu lcd_dma_mismatches=%llu lcd_dma_descriptor_pixels=%llu lcd_dma_block_pixels=%llu disk_reads=%llu disk_writes=%llu irq=%llu pc=0x%08x i2s_tx=%llu i2s_drained=%llu dma_audio_starts=%llu dma_audio_done=%llu dma_audio_bytes=%llu",
              (unsigned long long)s.counters.guest_insns,
+             (unsigned long long)s.counters.scheduled_insns,
+             (unsigned long long)s.counters.active_slices,
+             (unsigned long long)s.counters.cpu_slice_calls,
+             (unsigned long long)s.counters.cop_slice_calls,
+             (unsigned long long)s.counters.halted_ticks,
+             (unsigned long long)s.counters.fast_forwarded_ticks,
+             (unsigned long long)s.counters.timing_boundaries,
              (unsigned long long)s.counters.device_ticks,
+             s.timer.usec,
+             (unsigned long long)s.i2c.rtc_last_second,
+             s.i2c.pcf_low_battery ? 1u : 0u,
+             (unsigned long long)s.i2c.pcf_low_battery_events,
+             s.i2c.pcf_standby ? 1u : 0u,
+             (unsigned long long)s.counters.mmio_callbacks,
              (unsigned long long)s.counters.mmio_reads,
              (unsigned long long)s.counters.mmio_writes,
              (unsigned long long)s.counters.unrouted_mmio_reads,

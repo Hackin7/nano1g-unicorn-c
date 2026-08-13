@@ -69,6 +69,7 @@ typedef struct n1g_opts {
     bool web_enabled;
     bool web_no_hold;
     bool run_forever;
+    bool idle_fast_forward;
     bool trace_pc;
     bool trace_mmio;
     bool apple_diagnostics;
@@ -422,7 +423,15 @@ typedef struct n1g_host_mmio_profile_entry {
 
 typedef struct n1g_counters {
     uint64_t guest_insns;
+    uint64_t scheduled_insns;
+    uint64_t active_slices;
+    uint64_t cpu_slice_calls;
+    uint64_t cop_slice_calls;
+    uint64_t halted_ticks;
+    uint64_t fast_forwarded_ticks;
+    uint64_t timing_boundaries;
     uint64_t device_ticks;
+    uint64_t mmio_callbacks;
     uint64_t mmio_reads;
     uint64_t mmio_writes;
     uint64_t unrouted_mmio_reads;

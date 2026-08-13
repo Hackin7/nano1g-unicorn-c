@@ -74,6 +74,7 @@ def main():
                 base_url,
                 lambda s: s.get("backlight_mode") == "pwm"
                 and s.get("backlight_on") is True
+                and s.get("force_backlight_on") is False
                 and s.get("backlight_level") == 32
                 and s.get("clicker_on") is False
                 and s.get("clicker_period") == 20
@@ -109,6 +110,34 @@ def main():
             if off_raw != initial_raw:
                 raise RuntimeError("raw guest framebuffer changed with host backlight state")
 
+            forced_response = request(
+                f"{base_url}/display?force_backlight=1", deadline)
+            if forced_response.get("force_backlight_on") is not True:
+                raise RuntimeError(f"unexpected display response: {forced_response}")
+            forced = wait_status(
+                base_url,
+                lambda s: s.get("force_backlight_on") is True
+                and s.get("backlight_on") is False
+                and s.get("frame_seq", 0) > off.get("frame_seq", 0),
+                deadline,
+                "forced browser backlight override",
+            )
+            forced_frame = request(f"{base_url}/frame.rgba", deadline, False)
+            if forced_frame != initial_raw:
+                raise RuntimeError("forced browser frame did not expose raw LCD pixels")
+
+            request(f"{base_url}/display?force_backlight=0", deadline)
+            unforced = wait_status(
+                base_url,
+                lambda s: s.get("force_backlight_on") is False
+                and s.get("backlight_on") is False
+                and s.get("frame_seq", 0) > forced.get("frame_seq", 0),
+                deadline,
+                "disabled browser backlight override",
+            )
+            if rgb_nonzero(request(f"{base_url}/frame.rgba", deadline, False)) != 0:
+                raise RuntimeError("disabled override did not restore the dark frame")
+
             request(f"{base_url}/hardware?main_charger=0", deadline)
             wait_status(
                 base_url,
@@ -128,7 +157,7 @@ def main():
                 process.kill()
                 process.wait(timeout=5.0)
 
-    print("web PWM: backlight frames, raw RGBA, and piezo events ok")
+    print("web PWM: backlight frames, forced preview, raw RGBA, and piezo events ok")
 
 
 if __name__ == "__main__":
