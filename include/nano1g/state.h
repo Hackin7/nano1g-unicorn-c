@@ -425,6 +425,8 @@ typedef struct n1g_counters {
     uint64_t device_ticks;
     uint64_t mmio_reads;
     uint64_t mmio_writes;
+    uint64_t unrouted_mmio_reads;
+    uint64_t unrouted_mmio_writes;
     uint64_t lcd_words;
     uint64_t disk_reads;
     uint64_t disk_writes;

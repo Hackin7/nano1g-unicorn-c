@@ -113,6 +113,11 @@ static uint32_t unrouted_blocks[N1G_UNROUTED_SLOTS];
 static size_t unrouted_count;
 
 static void log_unrouted(n1g_state_t *s, const char *kind, uint32_t addr, uint32_t size, uint32_t value) {
+    if (kind[0] == 'w') {
+        s->counters.unrouted_mmio_writes++;
+    } else {
+        s->counters.unrouted_mmio_reads++;
+    }
     uint32_t block = (addr & ~0x3fu) | (kind[0] == 'w' ? 1u : 0u);
     for (size_t i = 0; i < unrouted_count; i++) {
         if (unrouted_blocks[i] == block) {
