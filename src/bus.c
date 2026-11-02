@@ -339,7 +339,12 @@ static bool idle_devices_quiescent(const n1g_state_t *s) {
         return false;
     }
     for (uint32_t channel = 0; channel < 4u; channel++) {
-        if (s->dma.lcd_request_armed[channel] || s->dma.ch[channel].active) {
+        if (s->dma.ch[channel].active) {
+            return false;
+        }
+    }
+    for (uint32_t channel = 0; channel < 2u; channel++) {
+        if (s->dma.secondary_ch[channel].active) {
             return false;
         }
     }

@@ -183,25 +183,32 @@ typedef struct n1g_sysregs {
     uint32_t periph_70003800[N1G_SYSREG_70003800_SIZE / 4];
 } n1g_sysregs_t;
 
+typedef struct n1g_dma_channel {
+    uint32_t cur_addr;
+    uint32_t bytes_left;
+    uint32_t programmed_bytes;
+    uint32_t burst_bytes;
+    uint32_t lcd_block_pixels;
+    uint64_t mismatch_block;
+    bool active;
+    bool eoc;
+    uint64_t starts;
+    uint64_t completions;
+    uint64_t bytes_pushed;
+} n1g_dma_channel_t;
+
 typedef struct n1g_dma {
     uint32_t regs[0x2000 / 4];
     uint32_t secondary_regs[0x2000 / 4];
-    bool lcd_request_armed[4];
     uint64_t lcd_transfers[4];
     uint64_t lcd_geometry_accepts;
     uint64_t lcd_geometry_mismatches;
     uint64_t lcd_descriptor_pixels;
     uint64_t lcd_block_pixels;
-    uint64_t lcd_mismatch_block_start[4];
-    /* Rockbox-style peripheral-paced channel engine (RAM -> IIS FIFO). */
-    struct {
-        uint32_t cur_addr;
-        uint32_t bytes_left;
-        bool active;
-        uint64_t starts;
-        uint64_t completions;
-        uint64_t bytes_pushed;
-    } ch[4];
+    /* APB DMA at 0x6000a000: four channels, completion IRQ 26. */
+    n1g_dma_channel_t ch[4];
+    /* AHB DMA at 0x60008000: two channels, polled completion. */
+    n1g_dma_channel_t secondary_ch[2];
 } n1g_dma_t;
 
 typedef struct n1g_i2s {

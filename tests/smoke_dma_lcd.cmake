@@ -35,7 +35,7 @@ execute_process(
     --max-insns 500
     --slice-insns 1
     --dump32 0x40000100
-    --dump-count 2
+    --dump-count 4
     --ppm ${ppm}
   RESULT_VARIABLE result
   OUTPUT_VARIABLE stdout
@@ -46,7 +46,7 @@ if(NOT result EQUAL 0)
 endif()
 
 set(output "${stdout}\n${stderr}")
-string(FIND "${output}" "dump32 addr=0x40000100 0x04000000 0x000000fc" dma_pos)
+string(FIND "${output}" "dump32 addr=0x40000100 0x440000fc 0x410000fc 0x04000000 0x00000000" dma_pos)
 if(dma_pos EQUAL -1)
   message(FATAL_ERROR "DMA LCD smoke observed wrong DMA register state: ${output}")
 endif()
