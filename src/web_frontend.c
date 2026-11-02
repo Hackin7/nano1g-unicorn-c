@@ -1,3 +1,11 @@
+#ifndef _WIN32
+/* usleep() is POSIX. This file is compiled as ISO C11, so glibc hides it
+ * unless a feature-test macro is set before the system headers. */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#endif
+
 #include "nano1g/web_frontend.h"
 
 #include "nano1g/cpu_unicorn.h"

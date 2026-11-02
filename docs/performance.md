@@ -54,6 +54,41 @@ local MinGW Release measurement regressed the primary Apple workload; enable it
 for a candidate build and retain it only after the benchmark threshold passes.
 No default uses `-march=native` or platform-specific tuning.
 
+## 2026-11-02: Rockbox 4.0 boot and the flash-alias write hook
+
+`scripts/fetch_rockbox.sh` installs official Rockbox 4.0 for `ipodnano1g`.
+On this host, `--profile rockbox --slice-insns 512 --timer-divider 1` reaches
+the main menu by 450 million scheduled instructions and is still on the splash
+at 320 million. The settled menu frame is byte-identical across the runs
+below (22,365 nonblack pixels). Summary counters other than wall time did not
+change.
+
+Rockbox 4.0 reads the PCF ADC result in the next I2C transaction, without
+waiting out the 25 µs conversion in device ticks. Counting that later MMIO
+access as the conversion (direct unit-test calls still wait for the tick)
+stops the first sample from reading as 0 mV, which otherwise draws the
+"Battery empty" shutdown instead of the menu.
+
+| Build | 450M scheduled | 2.5B scheduled | Guest MIPS at 2.5B | Steady MIPS after the menu |
+| --- | ---: | ---: | ---: | ---: |
+| Write hook on the 1 MiB flash alias | 4.617 s | 23.042 s | 57.0 | 55.6 |
+| Hook removed; alias mapped read/execute | 4.190 s | 21.356 s | 61.5 | 59.7 |
+
+Guest instructions at those budgets were 288,024,064 and 1,312,566,528.
+Removing the hook is about 9% and 7% on these single samples. A pure RAM
+load/store loop loses more (about 25%) because Unicorn sends every store
+through the slow helper while any `UC_HOOK_MEM_WRITE` is installed. This boot
+also does about 36 million MMIO callbacks per 180 million scheduled
+instructions, 26 million of them reads of the usec counter at `0x60005010`,
+so the hook is not the whole CPU cost. Cache-control writes were 8 in that
+profile, so flushing translation blocks on those writes is not the boot
+bottleneck.
+
+A direct return for word reads of `0x60005010` matched the frame and the
+counters, then varied by about a second on a repeat of the 2.5B run
+(20.678 s and 21.626 s). That is inside the noise, so the fast path was not
+kept.
+
 ## Retained Optimization
 
 When both cores are halted, the bus can advance directly to the nearest safe

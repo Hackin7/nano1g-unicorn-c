@@ -114,11 +114,37 @@ static const char apple_disk[] = "../artifacts/images/ipodhd-apple-nano-sysinfo-
 static const char ipodlinux_fw[] = "../artifacts/ipodlinux/kernel.bin";
 static const char ipodlinux_disk[] = "../artifacts/ipodlinux/userland.img";
 static const char rockbox_fw[] = "../artifacts/firmware/rockbox.ipod";
+static const char rockbox_fw_fetched[] = "fixtures/rockbox/firmware/rockbox.ipod";
 static const char rockbox_disk[] = "tmp/ipodhd-rockbox-nano-content-gpt.img";
+static const char rockbox_disk_fetched[] = "fixtures/rockbox/images/ipodhd-rockbox-nano-gpt.img";
+
+static bool file_readable(const char *path) {
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        return false;
+    }
+    fclose(file);
+    return true;
+}
+
+/* An explicit environment variable always wins. Otherwise prefer the historical
+ * path when that file exists, then an alternate (the fetched Rockbox tree). */
+static const char *resolve_path(const char *env_name, const char *primary, const char *alternate) {
+    const char *env = env_name ? getenv(env_name) : NULL;
+    if (env && env[0]) {
+        return env;
+    }
+    if (primary && file_readable(primary)) {
+        return primary;
+    }
+    if (alternate && file_readable(alternate)) {
+        return alternate;
+    }
+    return primary;
+}
 
 static const char *apple_flash_rom_path(void) {
-    const char *env = getenv("NANO1G_APPLE_BOOTROM");
-    return (env && env[0]) ? env : apple_default_flash_rom;
+    return resolve_path("NANO1G_APPLE_BOOTROM", apple_default_flash_rom, NULL);
 }
 
 static void apply_run_preset(n1g_opts_t *opts, const char *preset);
@@ -518,8 +544,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     if (strcmp(preset, "apple-native") == 0 || strcmp(preset, "apple-stage0") == 0) {
         opts->run_label = apple_stage0_label;
         opts->profile = N1G_PROFILE_APPLE;
-        opts->firmware_path = apple_stage0_fw;
-        opts->disk_path = apple_disk;
+        opts->firmware_path = resolve_path("NANO1G_APPLE_STAGE0", apple_stage0_fw, NULL);
+        opts->disk_path = resolve_path("NANO1G_APPLE_DISK", apple_disk, NULL);
         opts->max_insns = 175000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;
@@ -530,8 +556,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     } else if (strcmp(preset, "apple-direct") == 0) {
         opts->run_label = apple_direct_label;
         opts->profile = N1G_PROFILE_APPLE;
-        opts->firmware_path = apple_direct_fw;
-        opts->disk_path = apple_disk;
+        opts->firmware_path = resolve_path("NANO1G_APPLE_FIRMWARE", apple_direct_fw, NULL);
+        opts->disk_path = resolve_path("NANO1G_APPLE_DISK", apple_disk, NULL);
         opts->max_insns = 175000000u;
         opts->slice_insns = 128;
     } else if (strcmp(preset, "apple-official") == 0 || strcmp(preset, "apple-flash") == 0) {
@@ -539,7 +565,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
         opts->profile = N1G_PROFILE_APPLE;
         opts->boot_mode = N1G_BOOT_FLASH;
         opts->flash_path = apple_flash_rom_path();
-        opts->disk_path = apple_disk;
+        opts->disk_path = resolve_path("NANO1G_APPLE_DISK", apple_disk, NULL);
         opts->max_insns = 175000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;
@@ -548,8 +574,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     } else if (strcmp(preset, "ipodlinux") == 0) {
         opts->run_label = ipodlinux_label;
         opts->profile = N1G_PROFILE_ROCKBOX;
-        opts->firmware_path = ipodlinux_fw;
-        opts->disk_path = ipodlinux_disk;
+        opts->firmware_path = resolve_path("NANO1G_IPODLINUX_FIRMWARE", ipodlinux_fw, NULL);
+        opts->disk_path = resolve_path("NANO1G_IPODLINUX_DISK", ipodlinux_disk, NULL);
         opts->max_insns = 20000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;
@@ -559,8 +585,8 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     } else {
         opts->run_label = rockbox_label;
         opts->profile = N1G_PROFILE_ROCKBOX;
-        opts->firmware_path = rockbox_fw;
-        opts->disk_path = rockbox_disk;
+        opts->firmware_path = resolve_path("NANO1G_ROCKBOX_FIRMWARE", rockbox_fw, rockbox_fw_fetched);
+        opts->disk_path = resolve_path("NANO1G_ROCKBOX_DISK", rockbox_disk, rockbox_disk_fetched);
         opts->max_insns = 20000000u;
         opts->slice_insns = 512;
         opts->timer_divider = 1;

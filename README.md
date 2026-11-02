@@ -39,8 +39,20 @@ python tools/benchmark_emulator.py --suite all --runs 7 `
 See `docs/performance.md` for baseline comparison, diagnostic-mode caveats,
 idle acceleration safety, and retained/rejected optimization results.
 
-The Rockbox and Apple tests use fixtures from `../artifacts/` and skip when
-those local files are absent.
+Apple tests use fixtures from `../artifacts/` and skip when those local
+files are absent. Rockbox can be fetched instead of copied from that tree:
+
+```bash
+scripts/fetch_rockbox.sh
+```
+
+That downloads Rockbox 4.0 for `ipodnano1g` (pinned URL and SHA-256; no Apple
+firmware), builds an MBR FAT32 disk with `tools/make_rockbox_fat_disk.py`, and
+writes `fixtures/rockbox/` (gitignored). `smoke_rockbox_release` and
+`tools/benchmark_emulator.py` use it when `../artifacts` does not have the
+same files. Preset paths honor `NANO1G_ROCKBOX_FIRMWARE` and
+`NANO1G_ROCKBOX_DISK`; without those, `--run rockbox` uses
+`fixtures/rockbox/` when the historical artifact paths are missing.
 
 See `docs/unicorn_emulator.md` for the current Rockbox emulator runbook,
 web-control endpoints, verified plugin status, and caveats.

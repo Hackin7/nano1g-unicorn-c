@@ -289,6 +289,7 @@ typedef struct n1g_i2c {
     uint64_t pcf_wake_requests;
     uint64_t pcf_standby_deadline;
     uint64_t pcf_adc_deadline;
+    uint64_t pcf_adc_start_mmio;
     uint64_t pcf_adc_conversions;
     uint64_t pcf_low_battery_deadline;
     uint64_t pcf_low_battery_standby_deadline;
