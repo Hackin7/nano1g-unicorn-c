@@ -86,13 +86,27 @@ def assemble_probe(root: Path, output: Path, source_name: str) -> Path:
     return output
 
 
-def prepare_fixtures(root: Path, scratch: Path) -> Dict[str, Path]:
+def first_file(*candidates: Path) -> Path:
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+def prepare_fixtures(root: Path, scratch: Path, suite: str) -> Dict[str, Path]:
     artifacts = root.parent / "artifacts"
+    fetched = root / "fixtures" / "rockbox"
     fixtures: Dict[str, Path] = {
         "apple_disk": artifacts / "images" / "ipodhd-apple-nano-sysinfo-preferences-probe.img",
         "apple_media_disk": artifacts / "images" / "ipodhd-apple-nano-media-probe.img",
-        "rockbox_fw": artifacts / "firmware" / "rockbox.ipod",
-        "rockbox_source_disk": artifacts / "images" / "ipodhd-rockbox-nano.img",
+        "rockbox_fw": first_file(
+            artifacts / "firmware" / "rockbox.ipod",
+            fetched / "firmware" / "rockbox.ipod",
+        ),
+        "rockbox_source_disk": first_file(
+            artifacts / "images" / "ipodhd-rockbox-nano.img",
+            fetched / "images" / "ipodhd-rockbox-nano.img",
+        ),
         "rockbox_content_source": artifacts / "images" / "ipodhd-rockbox-nano-content.img",
     }
     scratch.mkdir(parents=True, exist_ok=True)
@@ -103,20 +117,29 @@ def prepare_fixtures(root: Path, scratch: Path) -> Dict[str, Path]:
         root, scratch / "benchmark-idle.bin", "cpucon_idle_probe.S"
     )
 
-    for key in ("apple_disk", "rockbox_fw", "rockbox_source_disk"):
-        if not fixtures[key].is_file():
-            raise RuntimeError(f"required fixture is missing: {fixtures[key]}")
+    need_apple = suite in ("apple", "all")
+    need_rockbox = suite in ("rockbox", "all")
+    if need_apple and not fixtures["apple_disk"].is_file():
+        raise RuntimeError(f"required fixture is missing: {fixtures['apple_disk']}")
+    if need_rockbox:
+        for key in ("rockbox_fw", "rockbox_source_disk"):
+            if not fixtures[key].is_file():
+                raise RuntimeError(
+                    f"required fixture is missing: {fixtures[key]} "
+                    "(run scripts/fetch_rockbox.sh or provide ../artifacts)"
+                )
 
     fixtures["rockbox_disk"] = scratch / "benchmark-rockbox-gpt.img"
-    run_checked(
-        [
-            sys.executable,
-            str(root / "tools" / "make_gpt_rockbox_disk.py"),
-            str(fixtures["rockbox_source_disk"]),
-            str(fixtures["rockbox_disk"]),
-        ],
-        root,
-    )
+    if fixtures["rockbox_source_disk"].is_file():
+        run_checked(
+            [
+                sys.executable,
+                str(root / "tools" / "make_gpt_rockbox_disk.py"),
+                str(fixtures["rockbox_source_disk"]),
+                str(fixtures["rockbox_disk"]),
+            ],
+            root,
+        )
     if fixtures["rockbox_content_source"].is_file():
         fixtures["rockbox_content_disk"] = scratch / "benchmark-rockbox-content-gpt.img"
         run_checked(
@@ -439,7 +462,7 @@ def main() -> int:
     binary = binary.resolve()
     scratch = root / "tmp" / "benchmark"
 
-    fixtures = prepare_fixtures(root, scratch)
+    fixtures = prepare_fixtures(root, scratch, args.suite)
     workloads = [workload for workload in build_workloads(fixtures) if args.suite == "all" or workload.suite == args.suite]
     if args.workload:
         selected = set(args.workload)

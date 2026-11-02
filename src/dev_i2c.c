@@ -465,6 +465,17 @@ static uint8_t pcf_read(n1g_state_t *s) {
         return value | (s->i2c.pcf_low_battery ? PCF50605_BVMC_LOWBAT : 0u);
     }
 
+    if ((reg == PCF50605_ADCS1 || reg == PCF50605_ADCS2 || reg == PCF50605_ADCS3) &&
+        !s->i2c.pcf_adc_ready && s->i2c.pcf_adc_deadline != 0u &&
+        s->counters.mmio_callbacks != s->i2c.pcf_adc_start_mmio) {
+        /* Guest I2C is bit-banged, so the result read is a later bus
+         * transaction. That gap is longer than the 25 us conversion on real
+         * wire time, which this model does not advance inside one slice.
+         * Direct device calls keep mmio_callbacks unchanged and still wait
+         * for the device-tick deadline. */
+        pcf_complete_adc(s);
+    }
+
     if (reg == PCF50605_ADCS1) {
         return (uint8_t)(s->i2c.pcf_adc_result1 >> 2u);
     }
@@ -528,6 +539,7 @@ static void pcf_write(n1g_state_t *s, uint8_t value, bool first_byte) {
                 s->i2c.pcf_regs[reg] &= (uint8_t)~PCF50605_ADCC2_START;
                 s->i2c.pcf_adc_ready = false;
                 s->i2c.pcf_adc_deadline = 0u;
+                s->i2c.pcf_adc_start_mmio = s->counters.mmio_callbacks;
                 if ((value & PCF50605_ADCC2_SYNC) == 0u) {
                     s->i2c.pcf_adc_deadline =
                         s->counters.device_ticks + pcf_ticks_for_usec(s, 25u);

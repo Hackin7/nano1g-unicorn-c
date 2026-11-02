@@ -22,6 +22,13 @@ static const int arm_regs[16] = {
     UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC,
 };
 
+static void hook_flash_write(uc_engine *uc,
+                             uc_mem_type type,
+                             uint64_t address,
+                             int size,
+                             int64_t value,
+                             void *user_data);
+
 static uint64_t mmio_read_cb(uc_engine *uc, uint64_t offset, unsigned size, void *user_data) {
     mmio_ctx_t *ctx = (mmio_ctx_t *)user_data;
     ctx->s->counters.mmio_callbacks++;
@@ -1892,6 +1899,17 @@ static bool hook_mem_invalid(uc_engine *uc,
                              int64_t value,
                              void *user_data) {
     n1g_state_t *s = (n1g_state_t *)user_data;
+    if (type == UC_MEM_WRITE_PROT) {
+        uint32_t addr = (uint32_t)address;
+        bool alias = s->flash_alias_mapped &&
+                     addr >= N1G_FLASH_ALIAS_BASE &&
+                     addr < N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE;
+        bool low = s->low0_map == N1G_LOW0_FLASH && addr < N1G_FLASH_SIZE;
+        if (alias || low) {
+            hook_flash_write(uc, type, address, size, value, s);
+            return true;
+        }
+    }
     uint32_t pc = 0;
     uint32_t cpsr = 0;
     uint32_t regs[10] = {0};
@@ -2272,14 +2290,11 @@ static void hook_flash_write(uc_engine *uc,
     }
 
     n1g_dev_flash_write(s, (uint32_t)offset, (uint32_t)size, (uint32_t)value);
-
-    /* Keep fallback Unicorn maps coherent; map_ptr users see s->flash.bytes. */
-    if (s->low0_map == N1G_LOW0_FLASH) {
-        (void)uc_mem_write(uc, N1G_FLASH_BASE, s->flash.bytes, 0x100u);
-    }
-    if (s->flash_alias_mapped) {
-        (void)uc_mem_write(uc, N1G_FLASH_ALIAS_BASE, s->flash.bytes, 0x100u);
-    }
+    /* map_ptr guests read s->flash.bytes directly. Do not uc_mem_write here:
+     * this runs inside the write-protect fault, and a nested mapping write
+     * faults again. The retried store is discarded because the page stays
+     * read-only. */
+    (void)uc;
 }
 
 static bool map_ram_one(n1g_state_t *s,
@@ -2306,10 +2321,15 @@ static bool map_ram_one(n1g_state_t *s,
 }
 
 static bool map_flash_one_at(n1g_state_t *s, uc_engine *uc, uint64_t addr, const char *name) {
+    /* Read/execute only. A UC_HOOK_MEM_WRITE on this window forces every
+     * store in the guest, including ordinary RAM, through Unicorn's slow
+     * helper. Writes fault instead and the invalid-memory hook runs the
+     * NOR command model; the raw store is discarded. */
+    const uint32_t prot = UC_PROT_READ | UC_PROT_EXEC;
     uc_err err = uc_mem_map_ptr(uc,
                                 addr,
                                 N1G_FLASH_SIZE,
-                                UC_PROT_ALL,
+                                prot,
                                 s->flash.bytes);
     if (err == UC_ERR_OK) {
         n1g_log(s, "flash map ptr %s addr=0x%08llx size=0x%x",
@@ -2322,7 +2342,7 @@ static bool map_flash_one_at(n1g_state_t *s, uc_engine *uc, uint64_t addr, const
             (unsigned long long)addr,
             N1G_FLASH_SIZE,
             uc_strerror(err));
-    err = uc_mem_map(uc, addr, N1G_FLASH_SIZE, UC_PROT_ALL);
+    err = uc_mem_map(uc, addr, N1G_FLASH_SIZE, prot);
     if (err != UC_ERR_OK) {
         n1g_log(s, "flash map fallback failed %s addr=0x%08llx size=0x%x: %s",
                 name,
@@ -2662,23 +2682,6 @@ bool n1g_cpu_init(n1g_state_t *s) {
             return false;
         }
         if (!add_hook_checked(s, s->cpu[i].uc, UC_HOOK_INTR, (void *)hook_intr, 1, 0)) {
-            return false;
-        }
-        if ((s->opts.boot_mode == N1G_BOOT_FLASH || s->opts.map_flash_zero || s->opts.virtual_memmap) &&
-            !add_hook_checked(s,
-                              s->cpu[i].uc,
-                              UC_HOOK_MEM_WRITE,
-                              (void *)hook_flash_write,
-                              N1G_FLASH_BASE,
-                              N1G_FLASH_BASE + N1G_FLASH_SIZE - 1u)) {
-            return false;
-        }
-        if (!add_hook_checked(s,
-                              s->cpu[i].uc,
-                              UC_HOOK_MEM_WRITE,
-                              (void *)hook_flash_write,
-                              N1G_FLASH_ALIAS_BASE,
-                              N1G_FLASH_ALIAS_BASE + N1G_FLASH_SIZE - 1u)) {
             return false;
         }
         if (s->opts.probe_pc_count > 0 && !add_probe_pc_hooks(s, s->cpu[i].uc)) {

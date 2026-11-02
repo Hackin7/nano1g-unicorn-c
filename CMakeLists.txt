@@ -393,6 +393,14 @@ if(BUILD_TESTING)
         -DNANO1G_PYTHON=${Python3_EXECUTABLE}
         -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_rockbox_menu.cmake)
+    add_test(NAME smoke_rockbox_release
+      COMMAND ${CMAKE_COMMAND}
+        -DNANO1G_BIN=$<TARGET_FILE:nano1g>
+        -DNANO1G_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -DNANO1G_PYTHON=${Python3_EXECUTABLE}
+        -DNANO1G_OUT_DIR=${CMAKE_CURRENT_BINARY_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_rockbox_release.cmake)
+    set_tests_properties(smoke_rockbox_release PROPERTIES TIMEOUT 60)
     add_test(NAME smoke_rockbox_plugin_demo
       COMMAND ${CMAKE_COMMAND}
         -DNANO1G_BIN=$<TARGET_FILE:nano1g>
