@@ -132,7 +132,7 @@ static void usage(void) {
     puts("       [--dump32 ADDR] [--dump-count N]");
     puts("       [--boot-mode direct|flash] [--firmware-from-disk] [--map-flash-zero] [--virtual-memmap] [--ram-fill-zero] [--input SCRIPT]");
     puts("       [--battery-percent N] [--main-charger] [--usb-charger] [--hold-switch]");
-    puts("       [--web PORT] [--web-no-hold] [--run-forever] [--no-idle-fast-forward]");
+    puts("       [--web PORT] [--web-bind ADDR] [--web-no-hold] [--run-forever] [--no-idle-fast-forward]");
     puts("       [--trace-pc] [--trace-mmio] [--apple-diagnostics] [--host-profile] [--verbose]");
 }
 
@@ -264,6 +264,32 @@ static n1g_opts_t parse_args(int argc, char **argv) {
             }
             opts.web_enabled = true;
             opts.web_port = (uint16_t)port;
+        } else if (strcmp(a, "--web-bind") == 0 && i + 1 < argc) {
+            const char *host = argv[++i];
+            unsigned parts = 0;
+            const char *p = host;
+            bool ok = host[0] != '\0';
+            while (ok && *p) {
+                unsigned val = 0;
+                unsigned digits = 0;
+                if (*p < '0' || *p > '9') ok = false;
+                while (ok && *p >= '0' && *p <= '9') {
+                    val = val * 10u + (unsigned)(*p - '0');
+                    digits++;
+                    if (val > 255u || digits > 3u) ok = false;
+                    p++;
+                }
+                parts++;
+                if (*p == '.') {
+                    if (parts >= 4u) ok = false;
+                    p++;
+                    if (*p == '\0') ok = false;
+                } else if (*p != '\0') {
+                    ok = false;
+                }
+            }
+            if (!ok || parts != 4u) n1g_die("--web-bind must be an IPv4 address");
+            opts.web_bind = host;
         } else if (strcmp(a, "--web-no-hold") == 0) {
             opts.web_no_hold = true;
         } else if (strcmp(a, "--run-forever") == 0) {
@@ -481,6 +507,7 @@ static n1g_opts_t make_restart_opts(const n1g_state_t *s, const char *preset) {
 static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     const bool web_enabled = opts->web_enabled;
     const uint16_t web_port = opts->web_port;
+    const char *web_bind = opts->web_bind;
     const bool web_no_hold = opts->web_no_hold;
     const char *ppm_path = opts->ppm_path;
     const bool run_forever = opts->run_forever;
@@ -499,6 +526,7 @@ static void apply_run_preset(n1g_opts_t *opts, const char *preset) {
     opts->dump_count = 1;
     opts->web_enabled = web_enabled;
     opts->web_port = web_port;
+    opts->web_bind = web_bind;
     opts->web_no_hold = web_no_hold;
     opts->run_forever = run_forever;
     opts->idle_fast_forward = idle_fast_forward;
@@ -605,6 +633,81 @@ static bool init_state(n1g_state_t *s, n1g_opts_t opts) {
         return false;
     }
     return true;
+}
+
+enum {
+    WEB_RESTART_REJECTED = 0,
+    WEB_RESTART_SWITCHED = 1,
+    WEB_RESTART_STOP = 2
+};
+
+static bool readable_file(const char *path) {
+    if (!path || path[0] == '\0') return false;
+    FILE *file = fopen(path, "rb");
+    if (!file) return false;
+    fclose(file);
+    return true;
+}
+
+static bool restart_images_ready(const n1g_opts_t *opts, char *err, size_t err_len) {
+    if (opts->boot_mode == N1G_BOOT_FLASH) {
+        if (!readable_file(opts->flash_path)) {
+            snprintf(err, err_len, "Firmware image not found%s%s",
+                     opts->flash_path ? ": " : "",
+                     opts->flash_path ? opts->flash_path : "");
+            return false;
+        }
+    } else if (!opts->firmware_from_disk) {
+        if (!readable_file(opts->firmware_path)) {
+            snprintf(err, err_len, "Firmware image not found%s%s",
+                     opts->firmware_path ? ": " : "",
+                     opts->firmware_path ? opts->firmware_path : "");
+            return false;
+        }
+    }
+    bool disk_is_pending_output = opts->disk_out_path && opts->disk_path &&
+                                  strcmp(opts->disk_path, opts->disk_out_path) == 0;
+    if (opts->disk_path && !disk_is_pending_output && !readable_file(opts->disk_path)) {
+        snprintf(err, err_len, "Disk image not found: %s", opts->disk_path);
+        return false;
+    }
+    return true;
+}
+
+static int perform_web_restart(n1g_state_t *s, n1g_web_server_t *web, const char *preset,
+                               bool *state_active, int *exit_code) {
+    char err[192];
+    n1g_opts_t next = make_restart_opts(s, preset);
+    if (!restart_images_ready(&next, err, sizeof(err))) {
+        n1g_web_note_restart_failure(web, err);
+        n1g_info(s, "web restart rejected: %s", err);
+        return WEB_RESTART_REJECTED;
+    }
+    if (!save_disk_output(s) || !save_pcf_state(s)) {
+        n1g_web_note_restart_failure(web, "Could not save disk or PMU state");
+        *exit_code = 1;
+        return WEB_RESTART_STOP;
+    }
+    n1g_opts_t previous = s->opts;
+    n1g_pcf_backup_t pcf_backup;
+    n1g_dev_i2c_save_pcf(s, &pcf_backup);
+    destroy_state(s);
+    *state_active = false;
+    if (!init_state(s, next)) {
+        n1g_web_note_restart_failure(web, "Restart failed");
+        if (!init_state(s, previous)) {
+            *exit_code = 1;
+            return WEB_RESTART_STOP;
+        }
+        n1g_dev_i2c_restore_pcf(s, &pcf_backup);
+        *state_active = true;
+        n1g_info(s, "web restart failed; restored the previous image");
+        return WEB_RESTART_SWITCHED;
+    }
+    n1g_dev_i2c_restore_pcf(s, &pcf_backup);
+    *state_active = true;
+    n1g_web_clear_restart_error(web);
+    return WEB_RESTART_SWITCHED;
 }
 
 static uint32_t read32_or_zero(n1g_state_t *s, uint32_t addr) {
@@ -753,12 +856,14 @@ int main(int argc, char **argv) {
     int exit_code = 0;
     bool restart_now = false;
     bool power_wake_restart = false;
+    bool web_restart_applied = false;
     char restart_preset[32] = {0};
 
 run_image:
     do {
         restart_now = false;
         power_wake_restart = false;
+        web_restart_applied = false;
         restart_preset[0] = '\0';
         n1g_host_profile_t host_profile;
         memset(&host_profile, 0, sizeof(host_profile));
@@ -794,6 +899,7 @@ run_image:
                                          ? n1g_bus_idle_advance_limit(&s)
                                          : 1u;
             if (advance_ticks > 1u) {
+                if (s.opts.web_enabled && n1g_web_urgent(&web)) advance_ticks = 1u;
                 if (s.opts.input_script) {
                     uint64_t input_limit = s.input_script_state.wait_left;
                     if (input_limit == 0u) {
@@ -900,40 +1006,60 @@ run_image:
             if (!s.opts.run_forever) {
                 remaining -= slice;
             }
-            if (s.opts.web_enabled && (s.counters.device_ticks & 0xffu) == 0) {
+            if (s.opts.web_enabled &&
+                (n1g_web_urgent(&web) || (s.counters.device_ticks & 0xffu) == 0)) {
                 part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
                 n1g_web_poll(&s, &web, true);
                 if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
-                    restart_now = true;
+                    int restarted = perform_web_restart(&s, &web, restart_preset, &state_active, &exit_code);
                     if (s.opts.host_profile) {
                         host_profile_add(&host_profile.web_ns, part_started_ns);
                         host_profile.web_polls++;
                     }
-                    break;
-                }
-                if (s.opts.host_profile) {
+                    if (restarted == WEB_RESTART_SWITCHED) {
+                        restart_now = true;
+                        web_restart_applied = true;
+                        break;
+                    }
+                    if (restarted == WEB_RESTART_STOP) {
+                        restart_now = false;
+                        break;
+                    }
+                } else if (s.opts.host_profile) {
                     host_profile_add(&host_profile.web_ns, part_started_ns);
                     host_profile.web_polls++;
                 }
             }
         }
+        if (!state_active) break;
         if (s.opts.web_enabled) {
             uint64_t part_started_ns = s.opts.host_profile ? host_profile_now_ns() : 0;
             n1g_web_poll(&s, &web, false);
             if (!restart_now && n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
-                restart_now = true;
+                int restarted = perform_web_restart(&s, &web, restart_preset, &state_active, &exit_code);
+                if (!state_active) break;
+                if (restarted == WEB_RESTART_SWITCHED) {
+                    restart_now = true;
+                    web_restart_applied = true;
+                } else if (restarted == WEB_RESTART_STOP) {
+                    restart_now = false;
+                }
             }
-            if (s.opts.host_profile) {
+            if (state_active && s.opts.host_profile) {
                 host_profile_add(&host_profile.web_ns, part_started_ns);
                 host_profile.web_polls++;
             }
         }
+        if (!state_active) break;
         if (s.opts.host_profile) {
             host_profile_report(&s, &host_profile);
         }
 
         if (!restart_now) {
             break;
+        }
+        if (web_restart_applied) {
+            continue;
         }
 
         n1g_info(&s, "%s restart requested preset=%s",
@@ -1587,27 +1713,10 @@ run_image:
         while (!stop_requested) {
             n1g_web_poll(&s, &web, false);
             if (n1g_web_take_restart(&web, restart_preset, sizeof(restart_preset))) {
-                n1g_info(&s, "web restart requested preset=%s", restart_preset);
-                if (!save_disk_output(&s)) {
-                    exit_code = 1;
-                    break;
-                }
-                if (!save_pcf_state(&s)) {
-                    exit_code = 1;
-                    break;
-                }
-                n1g_opts_t next = make_restart_opts(&s, restart_preset);
-                n1g_pcf_backup_t pcf_backup;
-                n1g_dev_i2c_save_pcf(&s, &pcf_backup);
-                destroy_state(&s);
-                state_active = false;
-                if (!init_state(&s, next)) {
-                    exit_code = 1;
-                    break;
-                }
-                n1g_dev_i2c_restore_pcf(&s, &pcf_backup);
-                state_active = true;
-                goto run_image;
+                int restarted = perform_web_restart(&s, &web, restart_preset, &state_active, &exit_code);
+                n1g_info(&s, "web restart requested preset=%s result=%d", restart_preset, restarted);
+                if (restarted == WEB_RESTART_SWITCHED) goto run_image;
+                if (restarted == WEB_RESTART_STOP) break;
             }
             n1g_web_sleep_ms(16);
         }

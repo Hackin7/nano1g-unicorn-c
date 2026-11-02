@@ -60,6 +60,7 @@ typedef struct n1g_opts {
     uint32_t dump_addr;
     uint32_t dump_count;
     uint16_t web_port;
+    const char *web_bind;
     bool entry_set;
     bool dump_set;
     bool firmware_from_disk;
