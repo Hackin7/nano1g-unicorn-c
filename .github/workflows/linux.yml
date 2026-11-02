@@ -1,0 +1,36 @@
+name: Linux
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install compiler, CMake, and ARM binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            python3 \
+            python3-pip \
+            binutils-arm-none-eabi
+
+      - name: Install Unicorn 2.1
+        run: |
+          python3 -m pip install --target .deps/python-unicorn 'unicorn>=2.1,<2.2' \
+            || python3 -m pip install --break-system-packages --target .deps/python-unicorn 'unicorn>=2.1,<2.2'
+
+      - name: Configure
+        run: cmake --preset linux-release
+
+      - name: Build
+        run: cmake --build --preset linux-release --parallel
+
+      - name: Test
+        run: ctest --test-dir build-linux --output-on-failure --no-tests=error -LE slow

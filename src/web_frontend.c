@@ -1,3 +1,7 @@
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "nano1g/web_frontend.h"
 
 #include "nano1g/cpu_unicorn.h"
@@ -20,6 +24,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -176,7 +181,13 @@ void n1g_web_sleep_ms(uint32_t ms) {
 #ifdef _WIN32
     Sleep(ms);
 #else
-    usleep(ms * 1000u);
+    struct timespec req;
+
+    req.tv_sec = (time_t)(ms / 1000u);
+    req.tv_nsec = (long)(ms % 1000u) * 1000000L;
+    while (nanosleep(&req, &req) != 0 && errno == EINTR) {
+        continue;
+    }
 #endif
 }
 

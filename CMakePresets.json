@@ -11,12 +11,57 @@
         "CMAKE_C_COMPILER": "C:/ProgramData/mingw64/mingw64/bin/gcc.exe",
         "CMAKE_MAKE_PROGRAM": "C:/ProgramData/mingw64/mingw64/bin/mingw32-make.exe"
       }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux Release",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-linux",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "mingw-release",
       "configurePreset": "mingw-release"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "slow"
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }
