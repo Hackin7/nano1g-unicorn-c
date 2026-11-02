@@ -22,6 +22,29 @@ cmake --preset mingw-release
 cmake --build --preset mingw-release
 ```
 
+### Linux
+
+The `linux-release` preset uses the system compiler. Unicorn 2.1.x from the
+pip wheel is enough: CMake looks for its `include/` and `lib/` under
+`-DUNICORN_ROOT`, then `.deps/python-unicorn/unicorn`, then an importable
+`unicorn` module. The wheel ships `libunicorn.so.2` (no unversioned
+`libunicorn.so`); the build links that shared object and records its directory
+as a build RPATH.
+
+```bash
+sudo apt-get install build-essential cmake python3 python3-pip binutils-arm-none-eabi
+python3 -m pip install --target .deps/python-unicorn 'unicorn>=2.1,<2.2'
+
+cmake --preset linux-release
+cmake --build --preset linux-release
+ctest --test-dir build-linux --output-on-failure -LE slow
+```
+
+`binutils-arm-none-eabi` supplies `arm-none-eabi-as` and `arm-none-eabi-objcopy`
+for the MMIO probes. `ctest -LE slow` is what CI runs: it omits the long Apple
+UI smokes, which stay registered for local runs. The same preset is
+`ctest --preset linux-release`.
+
 Run the registered smoke tests:
 
 ```bash
@@ -39,8 +62,77 @@ python tools/benchmark_emulator.py --suite all --runs 7 `
 See `docs/performance.md` for baseline comparison, diagnostic-mode caveats,
 idle acceleration safety, and retained/rejected optimization results.
 
-The Rockbox and Apple tests use fixtures from `../artifacts/` and skip when
-those local files are absent.
+Smoke scripts that stop because a fixture or the ARM assembler is missing used
+to return success. CTest now runs them through `tests/ctest_skip_wrapper.py`,
+which exits 77, and `SKIP_RETURN_CODE` reports the test as skipped.
+Unit tests and `smoke_args` need no extra files. With `arm-none-eabi-as` and
+`arm-none-eabi-objcopy` on `PATH`, these smokes assemble an in-tree probe and
+do not read `../artifacts`:
+
+- `smoke_ata_bounds`, `smoke_ata_dma`, `smoke_ata_identify_read`,
+  `smoke_ata_irq`, `smoke_ata_multiple_mode`, `smoke_ata_nondata_phase`,
+  `smoke_ata_pio_multisector`, `smoke_ata_pio_phase`,
+  `smoke_ata_pio_write_multisector`, `smoke_ata_pio_write_phase`,
+  `smoke_ata_soft_reset`, `smoke_ata_write`
+- `smoke_backlight`, `smoke_cpucon_wait`, `smoke_dma_lcd`, `smoke_evp_vectors`,
+  `smoke_flash_commands`, `smoke_flash_virtual_mmap_split`,
+  `smoke_gpio_atomic`, `smoke_gpio_idle_inputs`, `smoke_i2c_pmu`,
+  `smoke_idle_fast_forward`, `smoke_map_flash_zero`, `smoke_mmap_remap`,
+  `smoke_pcf_process_persistence`, `smoke_syscon_latches`, `smoke_timer_irq`,
+  `smoke_timer_rtc_scale`, `smoke_usb_latches`, `smoke_virtual_mmap_split`,
+  `smoke_web_backlight`
+
+Everything else below skips until each listed file exists. Paths are relative
+to the repository root, which is how the scripts resolve them. Tests marked
+slow are excluded by `ctest -LE slow`.
+
+| Test | Required files | ARM tools | Slow |
+| --- | --- | --- | --- |
+| `smoke_apple_audio` | `../artifacts/images/ipodhd-apple-nano-media-probe.img` | yes | |
+| `smoke_apple_calendar` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | yes |
+| `smoke_apple_clock_add` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | yes |
+| `smoke_apple_flash_bootrom_required` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_apple_flash_reset_probe` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | |
+| `smoke_apple_handoff_probe` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_apple_idle_wake` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | yes |
+| `smoke_apple_menu_navigation` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | |
+| `smoke_apple_menu_stress` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | yes |
+| `smoke_apple_nohle` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_apple_preferences_persistence` | `../artifacts/images/ipodhd-apple-nano-media-probe.img` | yes | yes |
+| `smoke_apple_stopwatch` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | yes |
+| `smoke_apple_virtual_mmap_handoff` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_aupd_batch_audit` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_aupd_direct_no_handoff` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_aupd_flash_payload_audit` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin` | | |
+| `smoke_aupd_flash_zero_sst` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_aupd_virtual_mmap_sst` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_boot_source_audit` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin`, `../artifacts/firmware/bootloader.bin`, `../artifacts/images/ipodhd-apple-nano.img`, `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img`, `../iPod_14.1.3.1.zip` | | |
+| `smoke_bootloader` | `../artifacts/firmware/bootloader.bin`, `../artifacts/images/ipodhd-rockbox-nano.img` | | |
+| `smoke_bootrom_candidate_scan` | `../iPod_14.1.3.1.zip`, `../artifacts/firmware/`, `../artifacts/images/` | | |
+| `smoke_disk_firmware` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_disk_sysinfo_contract` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | | |
+| `smoke_flash_boot` | `../artifacts/firmware/bootloader.bin`, `../artifacts/images/ipodhd-rockbox-nano.img` | | |
+| `smoke_native_sysinfo_handoff` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | |
+| `smoke_osos_handoff_contract` | `../artifacts/firmware/apple_nano_14.5.3.1_fw.bin` | | |
+| `smoke_payload_refs` | `../artifacts/analysis/apple_osos.bin` | | |
+| `smoke_rockbox` | `../artifacts/firmware/rockbox_nano_fw.bin`, `../artifacts/images/ipodhd-rockbox-nano.img` | | |
+| `smoke_rockbox_audio` | `../artifacts/firmware/rockbox.ipod`, `../artifacts/images/ipodhd-rockbox-nano-content.img` | | |
+| `smoke_rockbox_core` | `../artifacts/firmware/rockbox.ipod`, `../artifacts/images/ipodhd-rockbox-nano.img` | | |
+| `smoke_rockbox_menu` | `../artifacts/firmware/rockbox.ipod`, `../artifacts/images/ipodhd-rockbox-nano.img` | | |
+| `smoke_rockbox_plugin_demo` | `../artifacts/firmware/rockbox.ipod`, `../artifacts/images/ipodhd-rockbox-nano-content.img` | | |
+| `smoke_stage0_sysinfo_osos` | `../artifacts/images/ipodhd-apple-nano-sysinfo-preferences-probe.img` | yes | |
+| `smoke_web_disk_persistence` | `../artifacts/firmware/rockbox.ipod`, `../artifacts/ipodlinux/kernel.bin`, `../artifacts/ipodlinux/userland.img` | yes | |
+| `smoke_web_hardware_controls` | `../artifacts/firmware/rockbox.ipod`, `tmp/ipodhd-rockbox-nano-content-gpt.img` | yes | |
+
+`smoke_web_disk_persistence` and `smoke_web_hardware_controls` start from an
+assembled probe, then restart into the Rockbox preset, which loads
+`../artifacts/firmware/rockbox.ipod`. The disk-persistence smoke also restarts
+into the iPod Linux preset (`../artifacts/ipodlinux/kernel.bin` and
+`userland.img`). The hardware-controls smoke restarts onto
+`tmp/ipodhd-rockbox-nano-content-gpt.img`, built from
+`../artifacts/images/ipodhd-rockbox-nano-content.img` by
+`tools/make_gpt_rockbox_disk.py`. Both skip when those files are absent.
+
 
 See `docs/unicorn_emulator.md` for the current Rockbox emulator runbook,
 web-control endpoints, verified plugin status, and caveats.

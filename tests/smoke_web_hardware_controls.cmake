@@ -6,6 +6,15 @@ if(NOT ARM_AS OR NOT ARM_OBJCOPY)
   return()
 endif()
 
+# A Rockbox restart loads rockbox.ipod and the repo-relative content disk
+# (the Python driver uses the repository as the process working directory).
+set(rockbox_fw "${NANO1G_ROOT}/../artifacts/firmware/rockbox.ipod")
+set(rockbox_disk "${NANO1G_ROOT}/tmp/ipodhd-rockbox-nano-content-gpt.img")
+if(NOT EXISTS "${rockbox_fw}" OR NOT EXISTS "${rockbox_disk}")
+  message(WARNING "skipping web hardware controls smoke: Rockbox firmware or content-disk fixture is missing")
+  return()
+endif()
+
 set(obj "${NANO1G_OUT_DIR}/web-hardware-controls-probe.o")
 set(bin "${NANO1G_OUT_DIR}/web-hardware-controls-probe.bin")
 set(disk "${NANO1G_OUT_DIR}/web-hardware-controls.img")

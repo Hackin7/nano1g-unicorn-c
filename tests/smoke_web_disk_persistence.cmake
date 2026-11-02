@@ -6,6 +6,17 @@ if(NOT ARM_AS OR NOT ARM_OBJCOPY)
   return()
 endif()
 
+# Browser preset restarts load these paths (see apply_run_preset). The probe
+# binary is only the initial image; without the preset fixtures the restart
+# fails instead of skipping.
+set(rockbox_fw "${NANO1G_ROOT}/../artifacts/firmware/rockbox.ipod")
+set(ipodlinux_fw "${NANO1G_ROOT}/../artifacts/ipodlinux/kernel.bin")
+set(ipodlinux_disk "${NANO1G_ROOT}/../artifacts/ipodlinux/userland.img")
+if(NOT EXISTS "${rockbox_fw}" OR NOT EXISTS "${ipodlinux_fw}" OR NOT EXISTS "${ipodlinux_disk}")
+  message(WARNING "skipping web disk persistence smoke: Rockbox or iPod Linux preset fixture is missing")
+  return()
+endif()
+
 set(obj "${NANO1G_OUT_DIR}/web-disk-persistence-probe.o")
 set(bin "${NANO1G_OUT_DIR}/web-disk-persistence-probe.bin")
 set(seed "${NANO1G_OUT_DIR}/web-disk-persistence-seed.img")
