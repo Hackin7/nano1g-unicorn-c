@@ -70,25 +70,23 @@ the prior output image as that run's `--disk` input.
 
 ## Input
 
-The web UI uses server-side tap handling for buttons:
+The web UI holds buttons for as long as the pointer, touch, or key is down.
+Those edges go through the optical click-wheel controller. A scripted short
+press is still available:
 
 ```text
 /input?button=select&tap=1
-```
-
-That endpoint presses the selected button, holds it for a calibrated number of
-device ticks, then releases it from the emulator tick loop. This avoids the
-browser sending down/up pairs too quickly for Rockbox to interpret as a normal
-short press.
-
-Raw control endpoints are still available for scripts and debugging:
-
-```text
 /input?button=select&state=down
 /input?button=select&state=up
+/input?wheel_delta=N
 /input?wheel=down
 /input?wheel=up
 ```
+
+`wheel_delta` is a signed count on the 96-count wheel. `wheel=down` and
+`wheel=up` remain the older `+4`/`-4` steps. `--web-bind ADDR` chooses the
+IPv4 address; the default is `127.0.0.1`. Frames are served with
+`/frame.rgba?since=SEQ` and are not repeated while the LCD is unchanged.
 
 Headless deterministic input is available through `--input SCRIPT`, where the
 script accepts comma-separated `wait:N`, `NAME-down`, `NAME-up`, bare `NAME`,

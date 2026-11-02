@@ -171,8 +171,9 @@ Useful options:
   - `hold-down` / `hold-up`: engage/disengage the active-low physical Hold
     switch through GPIOA, including its interrupt and input-suppression path.
   - `NAME` (bare): press, hold `2000` ticks, release.
-  - `wheel:+D` / `wheel:-D`: move the click wheel by `D` raw units (the web
-    frontend's `wheel=down`/`wheel=up` buttons send `+4`/`-4`).
+  - `wheel:+D` / `wheel:-D`: move the click wheel by `D` raw units. The web
+    page sends one count per 3.75 degrees (96 per revolution). `wheel=down` and
+    `wheel=up` still send `+4`/`-4`.
   - `frame:LABEL`: write a deterministic LCD checkpoint beside `--ppm`; for
     example, `--ppm tmp/run.ppm` and `frame:main` produce
     `tmp/run-main.ppm`. This serializes native framebuffer state without
@@ -204,11 +205,17 @@ Useful options:
 - `--hold-switch`: start with the active-low GPIOA Hold switch engaged. The
   optical wheel controller suppresses buttons and wheel movement while held,
   and firmware receives the native GPIO interrupt on each switch transition.
-- `--web PORT`: serve a local browser frontend on `127.0.0.1:PORT`. The page
-  polls native emulator counters and the LCD framebuffer as a BMP image, and
-  exposes `/input?button=NAME&state=down|up` and `/input?wheel=down|up` for
-  live interactive control (used by the click wheel UI on the page). Enable the
-  page's Audio checkbox to start Web Audio output after a browser user gesture.
+- `--web PORT`: serve a browser frontend. It listens on `127.0.0.1` unless
+  `--web-bind ADDR` selects another IPv4 address (for example `0.0.0.0`).
+  The page long-polls changed LCD frames (`/frame.rgba?since=SEQ`, keep-alive,
+  about 60 fps) and talks to the modelled click wheel and buttons. Dragging the
+  wheel maps 96 counts per revolution. Buttons use pointer and touch down/up,
+  so holds work; a blur, tab close, or dropped hold connection releases them.
+  `/input?button=NAME&state=down|up`, `/input?button=NAME&tap=1`,
+  `/input?wheel=down|up` (`+4`/`-4`), and `/input?wheel_delta=N` remain
+  available. A missing preset image is reported in the page instead of exiting.
+  Enable the page's Audio checkbox to start Web Audio output after a browser
+  user gesture.
   The Battery slider and FireWire, USB power, and Hold checkboxes update live
   guest-visible hardware through `/hardware`; those external states survive a
   browser preset restart.

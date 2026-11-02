@@ -149,9 +149,11 @@ bool n1g_dev_opto_button(n1g_state_t *s, const char *button, bool pressed) {
     }
 
     if (pressed) {
+        if ((s->opto.button_bits & bit) != 0u) return true;
         s->opto.button_bits |= bit;
         set_last_input(s, "down", button);
     } else {
+        if ((s->opto.button_bits & bit) == 0u) return true;
         s->opto.button_bits &= ~bit;
         set_last_input(s, "up", button);
     }
